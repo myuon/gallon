@@ -1,6 +1,7 @@
 package gallon
 
 import (
+	"cloud.google.com/go/bigquery"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v6"
+	"github.com/google/uuid"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
+	"net/http"
 	"os"
 	"testing"
 )
@@ -34,6 +39,13 @@ type UserTable struct {
 	Name      string `dynamodbav:"name" json:"name"`
 	Age       int    `dynamodbav:"age" json:"age"`
 	CreatedAt int64  `dynamodbav:"created_at" json:"createdAt"`
+}
+
+var schema = bigquery.Schema{
+	{Name: "id", Type: bigquery.StringFieldType},
+	{Name: "name", Type: bigquery.StringFieldType},
+	{Name: "age", Type: bigquery.IntegerFieldType},
+	{Name: "created_at", Type: bigquery.IntegerFieldType},
 }
 
 func NewFakeUserTable() (UserTable, error) {
@@ -129,6 +141,33 @@ func Test_run(t *testing.T) {
 		}
 	}
 
+	client, err := bigquery.NewClient(context.Background(), "test", option.WithEndpoint("http://localhost:9050"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// check dataset exists
+	if _, err := client.Dataset("test").Metadata(context.Background()); err != nil {
+		if e, ok := err.(*googleapi.Error); ok {
+			if e.Code == http.StatusNotFound {
+				if err := client.Dataset("test").Create(context.Background(), &bigquery.DatasetMetadata{
+					Location: "asia-northeast1",
+				}); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := client.Dataset("test").Table("users").Create(context.Background(), &bigquery.TableMetadata{
+					Schema: schema,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				t.Fatal(err)
+			}
+		}
+	}
+	inserter := client.Dataset("test").Table("users").Inserter()
+
 	messages := make(chan interface{}, 1000)
 
 	go func() {
@@ -191,15 +230,23 @@ func Test_run(t *testing.T) {
 			}
 
 			msgSlice := msgs.([]interface{})
+
+			saver := []*bigquery.ValuesSaver{}
 			for _, msg := range msgSlice {
-				m, err := json.Marshal(msg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := file.Write(m); err != nil {
-					t.Fatal(err)
-				}
-				file.Write([]byte("\n"))
+				saver = append(saver, &bigquery.ValuesSaver{
+					Schema:   schema,
+					InsertID: uuid.New().String(),
+					Row: []bigquery.Value{
+						msg.(map[string]interface{})["id"],
+						msg.(map[string]interface{})["name"],
+						msg.(map[string]interface{})["age"],
+						msg.(map[string]interface{})["created_at"],
+					},
+				})
+			}
+
+			if err := inserter.Put(context.Background(), saver); err != nil {
+				t.Fatal(err)
 			}
 
 			fmt.Println("wrote", len(msgSlice), "items")
