@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v6"
@@ -14,11 +15,25 @@ import (
 	"testing"
 )
 
+func StructToJsonTagMap(data interface{}) (map[string]interface{}, error) {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	m := map[string]interface{}{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
 type UserTable struct {
-	ID        string `dynamodbav:"id"`
-	Name      string `dynamodbav:"name"`
-	Age       int    `dynamodbav:"age"`
-	CreatedAt int64  `dynamodbav:"created_at"`
+	ID        string `dynamodbav:"id" json:"id"`
+	Name      string `dynamodbav:"name" json:"name"`
+	Age       int    `dynamodbav:"age" json:"age"`
+	CreatedAt int64  `dynamodbav:"created_at" json:"createdAt"`
 }
 
 func NewFakeUserTable() (UserTable, error) {
@@ -142,7 +157,17 @@ func Test_run(t *testing.T) {
 
 			var msgs []interface{}
 			for _, item := range resp.Items {
-				msgs = append(msgs, item)
+				user := UserTable{}
+				if err := attributevalue.UnmarshalMap(item, &user); err != nil {
+					t.Fatal(err)
+				}
+
+				record, err := StructToJsonTagMap(user)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				msgs = append(msgs, record)
 			}
 
 			messages <- msgs
