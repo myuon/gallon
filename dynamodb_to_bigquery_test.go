@@ -2,6 +2,7 @@ package gallon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -9,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v6"
+	"os"
 	"testing"
 )
 
@@ -91,24 +93,91 @@ func Test_run(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
+
+		for i := 0; i < 1000; i++ {
+			v, err := NewFakeUserTable()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := svc.PutItem(context.TODO(), &dynamodb.PutItemInput{
+				TableName: aws.String("users"),
+				Item: map[string]types.AttributeValue{
+					"id":         &types.AttributeValueMemberS{Value: v.ID},
+					"name":       &types.AttributeValueMemberS{Value: v.Name},
+					"age":        &types.AttributeValueMemberN{Value: fmt.Sprint(v.Age)},
+					"created_at": &types.AttributeValueMemberN{Value: fmt.Sprint(v.CreatedAt)},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 
-	for i := 0; i < 100; i++ {
-		v, err := NewFakeUserTable()
-		if err != nil {
-			t.Fatal(err)
+	messages := make(chan interface{}, 1000)
+
+	go func() {
+		hasNext := true
+		lastEvaluatedKey := map[string]types.AttributeValue(nil)
+
+		for hasNext {
+			resp, err := svc.Scan(
+				context.TODO(),
+				&dynamodb.ScanInput{
+					TableName:         aws.String("users"),
+					ExclusiveStartKey: lastEvaluatedKey,
+					Limit:             aws.Int32(100),
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if resp.LastEvaluatedKey != nil {
+				hasNext = true
+				lastEvaluatedKey = resp.LastEvaluatedKey
+			} else {
+				hasNext = false
+			}
+
+			var msgs []interface{}
+			for _, item := range resp.Items {
+				msgs = append(msgs, item)
+			}
+
+			messages <- msgs
 		}
 
-		if _, err := svc.PutItem(context.TODO(), &dynamodb.PutItemInput{
-			TableName: aws.String("users"),
-			Item: map[string]types.AttributeValue{
-				"id":         &types.AttributeValueMemberS{Value: v.ID},
-				"name":       &types.AttributeValueMemberS{Value: v.Name},
-				"age":        &types.AttributeValueMemberN{Value: fmt.Sprint(v.Age)},
-				"created_at": &types.AttributeValueMemberN{Value: fmt.Sprint(v.CreatedAt)},
-			},
-		}); err != nil {
-			t.Fatal(err)
+		close(messages)
+	}()
+
+	file, err := os.Create("output.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer file.Close()
+
+	for {
+		select {
+		case msgs, ok := <-messages:
+			if !ok {
+				return
+			}
+
+			msgSlice := msgs.([]interface{})
+			for _, msg := range msgSlice {
+				m, err := json.Marshal(msg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := file.Write(m); err != nil {
+					t.Fatal(err)
+				}
+				file.Write([]byte("\n"))
+			}
+
+			fmt.Println("wrote", len(msgSlice), "items")
 		}
 	}
 }
