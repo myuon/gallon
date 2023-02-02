@@ -233,15 +233,15 @@ func Test_run(t *testing.T) {
 
 			saver := []*bigquery.ValuesSaver{}
 			for _, msg := range msgSlice {
+				values := []bigquery.Value{}
+				for _, v := range schema {
+					values = append(values, msg.(map[string]interface{})[v.Name])
+				}
+
 				saver = append(saver, &bigquery.ValuesSaver{
 					Schema:   schema,
 					InsertID: uuid.New().String(),
-					Row: []bigquery.Value{
-						msg.(map[string]interface{})["id"],
-						msg.(map[string]interface{})["name"],
-						msg.(map[string]interface{})["age"],
-						msg.(map[string]interface{})["created_at"],
-					},
+					Row:      values,
 				})
 			}
 
