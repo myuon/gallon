@@ -6,17 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/google/uuid"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/option"
 	"log"
-	"net/http"
 	"testing"
 )
 
@@ -57,52 +52,17 @@ func NewFakeUserTable() (UserTable, error) {
 	return v, nil
 }
 
-func CreateLocalClient() *dynamodb.Client {
-	cfg, err := config.LoadDefaultConfig(
-		context.TODO(),
-		config.WithRegion("us-east-1"),
-		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: "http://localhost:8000"}, nil
-			})),
-		config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
-			Value: aws.Credentials{
-				AccessKeyID: "dummy", SecretAccessKey: "dummy", SessionToken: "dummy",
-				Source: "Hard-coded credentials; values are irrelevant for local DynamoDB",
-			},
-		}),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	return dynamodb.NewFromConfig(cfg)
-}
-
-func checkIfTableExists(svc *dynamodb.Client, name string) (bool, error) {
-	_, err := svc.DescribeTable(context.TODO(), &dynamodb.DescribeTableInput{
-		TableName: aws.String(name),
-	})
-	if err != nil {
-		if _, ok := err.(*types.ResourceNotFoundException); !ok {
-			return false, err
-		}
-	}
-
-	return true, nil
-}
-
 func run() error {
-	svc := CreateLocalClient()
+	dynamoClient := NewDynamoDbLocalClient()
 
 	// check table exists
-	exists, err := checkIfTableExists(svc, "users")
+	exists, err := DynamoDbCheckIfTableExists(dynamoClient, "users")
 	if err != nil {
 		return err
 	}
 
 	if !exists {
-		if _, err := svc.CreateTable(context.TODO(), &dynamodb.CreateTableInput{
+		if _, err := dynamoClient.CreateTable(context.TODO(), &dynamodb.CreateTableInput{
 			TableName: aws.String("users"),
 			AttributeDefinitions: []types.AttributeDefinition{
 				{
@@ -127,7 +87,7 @@ func run() error {
 				return err
 			}
 
-			if _, err := svc.PutItem(context.TODO(), &dynamodb.PutItemInput{
+			if _, err := dynamoClient.PutItem(context.TODO(), &dynamodb.PutItemInput{
 				TableName: aws.String("users"),
 				Item: map[string]types.AttributeValue{
 					"id":         &types.AttributeValueMemberS{Value: v.ID},
@@ -141,32 +101,29 @@ func run() error {
 		}
 	}
 
-	client, err := bigquery.NewClient(context.Background(), "test", option.WithEndpoint("http://localhost:9050"))
+	bigqueryClient := NewBigQueryLocalClient()
+
+	exists, err = BigQueryCheckIfTableExists(bigqueryClient.Dataset("test").Table("users"))
 	if err != nil {
 		return err
 	}
 
 	// check dataset exists
-	if _, err := client.Dataset("test").Metadata(context.Background()); err != nil {
-		if e, ok := err.(*googleapi.Error); ok {
-			if e.Code == http.StatusNotFound {
-				if err := client.Dataset("test").Create(context.Background(), &bigquery.DatasetMetadata{
-					Location: "asia-northeast1",
-				}); err != nil {
-					return err
-				}
+	if !exists {
+		if err := bigqueryClient.Dataset("test").Create(context.Background(), &bigquery.DatasetMetadata{
+			Location: "asia-northeast1",
+		}); err != nil {
+			return err
+		}
 
-				if err := client.Dataset("test").Table("users").Create(context.Background(), &bigquery.TableMetadata{
-					Schema: schema,
-				}); err != nil {
-					return err
-				}
-			} else {
-				return err
-			}
+		if err := bigqueryClient.Dataset("test").Table("users").Create(context.Background(), &bigquery.TableMetadata{
+			Schema: schema,
+		}); err != nil {
+			return err
 		}
 	}
-	inserter := client.Dataset("test").Table("users").Inserter()
+
+	inserter := bigqueryClient.Dataset("test").Table("users").Inserter()
 
 	messages := make(chan interface{}, 1000)
 
@@ -175,7 +132,7 @@ func run() error {
 		lastEvaluatedKey := map[string]types.AttributeValue(nil)
 
 		for hasNext {
-			resp, err := svc.Scan(
+			resp, err := dynamoClient.Scan(
 				context.TODO(),
 				&dynamodb.ScanInput{
 					TableName:         aws.String("users"),
