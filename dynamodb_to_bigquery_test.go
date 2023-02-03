@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	"log"
 	"net/http"
-	"os"
 	"testing"
 )
 
@@ -92,13 +92,13 @@ func checkIfTableExists(svc *dynamodb.Client, name string) (bool, error) {
 	return true, nil
 }
 
-func Test_run(t *testing.T) {
+func run() error {
 	svc := CreateLocalClient()
 
 	// check table exists
 	exists, err := checkIfTableExists(svc, "users")
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
 	if !exists {
@@ -118,13 +118,13 @@ func Test_run(t *testing.T) {
 			},
 			BillingMode: types.BillingModePayPerRequest,
 		}); err != nil {
-			t.Fatal(err)
+			return err
 		}
 
 		for i := 0; i < 1000; i++ {
 			v, err := NewFakeUserTable()
 			if err != nil {
-				t.Fatal(err)
+				return err
 			}
 
 			if _, err := svc.PutItem(context.TODO(), &dynamodb.PutItemInput{
@@ -136,14 +136,14 @@ func Test_run(t *testing.T) {
 					"created_at": &types.AttributeValueMemberN{Value: fmt.Sprint(v.CreatedAt)},
 				},
 			}); err != nil {
-				t.Fatal(err)
+				return err
 			}
 		}
 	}
 
 	client, err := bigquery.NewClient(context.Background(), "test", option.WithEndpoint("http://localhost:9050"))
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
 	// check dataset exists
@@ -153,16 +153,16 @@ func Test_run(t *testing.T) {
 				if err := client.Dataset("test").Create(context.Background(), &bigquery.DatasetMetadata{
 					Location: "asia-northeast1",
 				}); err != nil {
-					t.Fatal(err)
+					return err
 				}
 
 				if err := client.Dataset("test").Table("users").Create(context.Background(), &bigquery.TableMetadata{
 					Schema: schema,
 				}); err != nil {
-					t.Fatal(err)
+					return err
 				}
 			} else {
-				t.Fatal(err)
+				return err
 			}
 		}
 	}
@@ -184,7 +184,7 @@ func Test_run(t *testing.T) {
 				},
 			)
 			if err != nil {
-				t.Fatal(err)
+				log.Fatal(err)
 			}
 
 			if resp.LastEvaluatedKey != nil {
@@ -198,12 +198,12 @@ func Test_run(t *testing.T) {
 			for _, item := range resp.Items {
 				user := UserTable{}
 				if err := attributevalue.UnmarshalMap(item, &user); err != nil {
-					t.Fatal(err)
+					log.Fatal(err)
 				}
 
 				record, err := StructToJsonTagMap(user)
 				if err != nil {
-					t.Fatal(err)
+					log.Fatal(err)
 				}
 
 				msgs = append(msgs, record)
@@ -215,18 +215,11 @@ func Test_run(t *testing.T) {
 		close(messages)
 	}()
 
-	file, err := os.Create("output.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer file.Close()
-
 	for {
 		select {
 		case msgs, ok := <-messages:
 			if !ok {
-				return
+				return nil
 			}
 
 			msgSlice := msgs.([]interface{})
@@ -246,10 +239,16 @@ func Test_run(t *testing.T) {
 			}
 
 			if err := inserter.Put(context.Background(), saver); err != nil {
-				t.Fatal(err)
+				return err
 			}
 
 			fmt.Println("wrote", len(msgSlice), "items")
 		}
+	}
+}
+
+func Test_run(t *testing.T) {
+	if err := run(); err != nil {
+		t.Fatal(err)
 	}
 }
