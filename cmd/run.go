@@ -16,7 +16,7 @@ var RunCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		configFile := args[0]
 		if err := run(configFile); err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 	},
 }

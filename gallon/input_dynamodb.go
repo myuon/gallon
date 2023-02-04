@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"gopkg.in/yaml.v3"
@@ -96,7 +97,7 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (InputPluginDynamoDb, er
 	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
 		return InputPluginDynamoDb{}, err
 	}
-	
+
 	cfg := aws.Config{
 		Region: dbConfig.Region,
 	}
@@ -106,6 +107,12 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (InputPluginDynamoDb, er
 			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 				return aws.Endpoint{URL: *dbConfig.Endpoint}, nil
 			})
+		cfg.Credentials = credentials.StaticCredentialsProvider{
+			Value: aws.Credentials{
+				AccessKeyID: "dummy", SecretAccessKey: "dummy", SessionToken: "dummy",
+				Source: "Hard-coded credentials; values are irrelevant for local DynamoDB",
+			},
+		}
 	}
 
 	client := dynamodb.NewFromConfig(cfg)

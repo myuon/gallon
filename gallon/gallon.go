@@ -1,6 +1,9 @@
 package gallon
 
-import "log"
+import (
+	"log"
+	"sync"
+)
 
 type InputPlugin interface {
 	Extract(messages chan interface{}) error
@@ -17,16 +20,31 @@ type Gallon struct {
 
 func (g Gallon) Run() error {
 	messages := make(chan interface{}, 1000)
+	wg := sync.WaitGroup{}
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+
+		log.Println("start extract")
+
 		if err := g.Input.Extract(messages); err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 	}()
 
-	if err := g.Output.Load(messages); err != nil {
-		log.Fatal(err)
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		log.Println("start load")
+
+		if err := g.Output.Load(messages); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	wg.Wait()
 
 	return nil
 }

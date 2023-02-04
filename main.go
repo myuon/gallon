@@ -16,6 +16,6 @@ func main() {
 	roomCmd.AddCommand(cmd.RunCmd)
 
 	if err := roomCmd.Execute(); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 }
