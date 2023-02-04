@@ -6,7 +6,7 @@ import (
 	"github.com/myuon/gallon/gallon"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 	"log"
 	"os"
 )
