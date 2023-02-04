@@ -11,20 +11,20 @@ type OutputPlugin interface {
 }
 
 type Gallon struct {
-	input  InputPlugin
-	output OutputPlugin
+	Input  InputPlugin
+	Output OutputPlugin
 }
 
 func (g Gallon) Run() error {
 	messages := make(chan interface{}, 1000)
 
 	go func() {
-		if err := g.input.Extract(messages); err != nil {
+		if err := g.Input.Extract(messages); err != nil {
 			log.Fatal(err)
 		}
 	}()
 
-	if err := g.output.Load(messages); err != nil {
+	if err := g.Output.Load(messages); err != nil {
 		log.Fatal(err)
 	}
 

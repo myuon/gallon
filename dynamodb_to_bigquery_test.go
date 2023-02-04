@@ -106,7 +106,7 @@ func run() error {
 	}
 
 	gallon := Gallon{
-		input: NewInputPluginDynamoDb(
+		Input: NewInputPluginDynamoDb(
 			dynamoClient,
 			"users",
 			func(item map[string]types.AttributeValue) (interface{}, error) {
@@ -123,7 +123,7 @@ func run() error {
 				return record, nil
 			},
 		),
-		output: NewOutputPluginBigQuery(
+		Output: NewOutputPluginBigQuery(
 			bigqueryClient,
 			"test",
 			"users",
