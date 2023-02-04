@@ -109,47 +109,41 @@ func run() error {
 		return err
 	}
 
-	messages := make(chan interface{}, 1000)
+	gallon := Gallon{
+		input: NewInputPluginDynamoDb(
+			dynamoClient,
+			"users",
+			func(item map[string]types.AttributeValue) (interface{}, error) {
+				user := UserTable{}
+				if err := attributevalue.UnmarshalMap(item, &user); err != nil {
+					return nil, err
+				}
 
-	inputPlugin := NewInputPluginDynamoDb(
-		dynamoClient,
-		"users",
-		func(item map[string]types.AttributeValue) (interface{}, error) {
-			user := UserTable{}
-			if err := attributevalue.UnmarshalMap(item, &user); err != nil {
-				return nil, err
-			}
+				record, err := StructToJsonTagMap(user)
+				if err != nil {
+					return nil, err
+				}
 
-			record, err := StructToJsonTagMap(user)
-			if err != nil {
-				return nil, err
-			}
+				return record, nil
+			},
+		),
+		output: NewOutputPluginBigQuery(
+			bigqueryClient,
+			"test",
+			"users",
+			schema,
+			func(item interface{}) ([]bigquery.Value, error) {
+				values := []bigquery.Value{}
+				for _, v := range schema {
+					values = append(values, item.(map[string]interface{})[v.Name])
+				}
 
-			return record, nil
-		},
-	)
-	outputPlugin := NewOutputPluginBigQuery(
-		bigqueryClient,
-		"test",
-		"users",
-		schema,
-		func(item interface{}) ([]bigquery.Value, error) {
-			values := []bigquery.Value{}
-			for _, v := range schema {
-				values = append(values, item.(map[string]interface{})[v.Name])
-			}
+				return values, nil
+			},
+		),
+	}
 
-			return values, nil
-		},
-	)
-
-	go func() {
-		if err := inputPlugin.Extract(messages); err != nil {
-			log.Fatal(err)
-		}
-	}()
-
-	if err := outputPlugin.Load(messages); err != nil {
+	if err := gallon.Run(); err != nil {
 		log.Fatal(err)
 	}
 

@@ -32,7 +32,9 @@ func NewOutputPluginBigQuery(
 	}
 }
 
-func (p *OutputPluginBigQuery) Load(
+var _ OutputPlugin = OutputPluginBigQuery{}
+
+func (p OutputPluginBigQuery) Load(
 	messages chan interface{},
 ) error {
 	inserter := p.client.Dataset(p.datasetId).Table(p.tableId).Inserter()

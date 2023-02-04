@@ -27,7 +27,9 @@ func NewInputPluginDynamoDb(
 	}
 }
 
-func (p *InputPluginDynamoDb) Extract(
+var _ InputPlugin = InputPluginDynamoDb{}
+
+func (p InputPluginDynamoDb) Extract(
 	messages chan interface{},
 ) error {
 	hasNext := true
