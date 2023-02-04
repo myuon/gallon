@@ -114,49 +114,28 @@ func run() error {
 
 	messages := make(chan interface{}, 1000)
 
+	inputPlugin := NewInputPluginDynamoDb(dynamoClient)
+
 	go func() {
-		hasNext := true
-		lastEvaluatedKey := map[string]types.AttributeValue(nil)
-
-		for hasNext {
-			resp, err := dynamoClient.Scan(
-				context.TODO(),
-				&dynamodb.ScanInput{
-					TableName:         aws.String("users"),
-					ExclusiveStartKey: lastEvaluatedKey,
-					Limit:             aws.Int32(100),
-				},
-			)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if resp.LastEvaluatedKey != nil {
-				hasNext = true
-				lastEvaluatedKey = resp.LastEvaluatedKey
-			} else {
-				hasNext = false
-			}
-
-			var msgs []interface{}
-			for _, item := range resp.Items {
+		if err := inputPlugin.Extract(
+			messages,
+			"users",
+			func(item map[string]types.AttributeValue) (interface{}, error) {
 				user := UserTable{}
 				if err := attributevalue.UnmarshalMap(item, &user); err != nil {
-					log.Fatal(err)
+					return nil, err
 				}
 
 				record, err := StructToJsonTagMap(user)
 				if err != nil {
-					log.Fatal(err)
+					return nil, err
 				}
 
-				msgs = append(msgs, record)
-			}
-
-			messages <- msgs
+				return record, nil
+			},
+		); err != nil {
+			log.Fatal(err)
 		}
-
-		close(messages)
 	}()
 
 	for {
