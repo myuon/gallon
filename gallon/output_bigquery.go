@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
+	"log"
 	"strings"
 )
 
@@ -84,7 +85,7 @@ loop:
 			}
 
 			loadedTotal += len(msgSlice)
-			fmt.Println("loaded", loadedTotal, "items")
+			log.Printf("loaded %v records\n", loadedTotal)
 		}
 	}
 
@@ -92,8 +93,12 @@ loop:
 		return tracedError
 	}
 
+	log.Printf("loaded into %v\n", temporaryTable.TableID)
+
 	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
 	copier.WriteDisposition = bigquery.WriteTruncate
+
+	log.Printf("copying from %v to %v\n", temporaryTable.TableID, p.tableId)
 
 	job, err := copier.Run(ctx)
 	if err != nil {
@@ -108,9 +113,13 @@ loop:
 		return err
 	}
 
+	log.Printf("copied\n")
+
 	if err := temporaryTable.Delete(ctx); err != nil {
 		return err
 	}
+
+	log.Printf("deleted temporary table %v\n", temporaryTable.TableID)
 
 	return nil
 }
