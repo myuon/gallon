@@ -102,6 +102,34 @@ type InputPluginDynamoDbConfigSchemaColumn struct {
 	Type string `yaml:"type"`
 }
 
+func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) (interface{}, error) {
+	switch c.Type {
+	case "string":
+		value, ok := v.(*types.AttributeValueMemberS)
+		if !ok {
+			return nil, fmt.Errorf("invalid type: %v for value: %v", c.Type, v)
+		}
+
+		return value.Value, nil
+	case "number":
+		value, ok := v.(*types.AttributeValueMemberN)
+		if !ok {
+			return nil, fmt.Errorf("invalid type: %v for value: %v", c.Type, v)
+		}
+
+		return value.Value, nil
+	case "boolean":
+		value, ok := v.(*types.AttributeValueMemberBOOL)
+		if !ok {
+			return nil, fmt.Errorf("invalid type: %v for value: %v", c.Type, v)
+		}
+
+		return value.Value, nil
+	default:
+		return nil, fmt.Errorf("unsupported type: %v", c.Type)
+	}
+}
+
 func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, error) {
 	var dbConfig InputPluginDynamoDbConfig
 	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
@@ -138,7 +166,7 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 			record := map[string]interface{}{}
 
 			for k, v := range item {
-				value, err := getValue(dbConfig.Schema[k], v)
+				value, err := dbConfig.Schema[k].getValue(v)
 				if err != nil {
 					return nil, err
 				}
@@ -149,32 +177,4 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 			return record, nil
 		},
 	), nil
-}
-
-func getValue(t InputPluginDynamoDbConfigSchemaColumn, v types.AttributeValue) (interface{}, error) {
-	switch t.Type {
-	case "string":
-		value, ok := v.(*types.AttributeValueMemberS)
-		if !ok {
-			return nil, errors.New("invalid type: " + t.Type + " for value: " + fmt.Sprintf("%v", v))
-		}
-
-		return value.Value, nil
-	case "number":
-		value, ok := v.(*types.AttributeValueMemberN)
-		if !ok {
-			return nil, errors.New("invalid type: " + t.Type + " for value: " + fmt.Sprintf("%v", v))
-		}
-
-		return value.Value, nil
-	case "boolean":
-		value, ok := v.(*types.AttributeValueMemberBOOL)
-		if !ok {
-			return nil, errors.New("invalid type: " + t.Type + " for value: " + fmt.Sprintf("%v", v))
-		}
-
-		return value.Value, nil
-	default:
-		return nil, errors.New("unknown type: " + t.Type)
-	}
 }
