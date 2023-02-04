@@ -53,7 +53,7 @@ func (p OutputPluginBigQuery) Load(
 
 	loadedTotal := 0
 
-	var err error
+	var tracedError error
 
 loop:
 	for {
@@ -69,7 +69,7 @@ loop:
 			for _, msg := range msgSlice {
 				values, err := p.deserialize(msg)
 				if err != nil {
-					err = errors.Join(err, errors.New("failed to deserialize dynamodb record: "+fmt.Sprintf("%v", msg)))
+					tracedError = errors.Join(tracedError, fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err))
 				}
 
 				saver = append(saver, &bigquery.ValuesSaver{
@@ -80,7 +80,7 @@ loop:
 			}
 
 			if err := inserter.Put(context.Background(), saver); err != nil {
-				return err
+				tracedError = errors.Join(tracedError, fmt.Errorf("failed to insert records: %v (error: %v)", saver, err))
 			}
 
 			loadedTotal += len(msgSlice)
@@ -88,8 +88,8 @@ loop:
 		}
 	}
 
-	if err != nil {
-		return err
+	if tracedError != nil {
+		return tracedError
 	}
 
 	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
@@ -105,6 +105,10 @@ loop:
 	}
 
 	if err := status.Err(); err != nil {
+		return err
+	}
+
+	if err := temporaryTable.Delete(ctx); err != nil {
 		return err
 	}
 
