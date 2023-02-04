@@ -2,6 +2,7 @@ in:
   type: dynamodb
   region: ap-northeast-1
   table: users
+  endpoint: "http://localhost:8000"
   schema:
     id:
       type: string
@@ -14,10 +15,10 @@ in:
 out:
   type: bigquery
   location: asia-northeast1
-  projectId: test
+  projectId: default-364617
   datasetId: test
-  tableId: users
-  endpoint: "http://localhost:9050"
+  tableId: users_test
+  # endpoint: "http://localhost:9050"
   schema:
     id:
       type: string

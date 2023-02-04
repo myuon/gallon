@@ -84,6 +84,7 @@ type InputPluginDynamoDbConfig struct {
 	TableName string                                           `yaml:"table_name"`
 	Schema    map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
 	Region    string                                           `yaml:"region"`
+	Endpoint  *string                                          `yaml:"endpoint"`
 }
 
 type InputPluginDynamoDbConfigSchemaColumn struct {
@@ -91,23 +92,32 @@ type InputPluginDynamoDbConfigSchemaColumn struct {
 }
 
 func NewInputPluginDynamoDbFromConfig(configYml []byte) (InputPluginDynamoDb, error) {
-	var config InputPluginDynamoDbConfig
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var dbConfig InputPluginDynamoDbConfig
+	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
 		return InputPluginDynamoDb{}, err
 	}
+	
+	cfg := aws.Config{
+		Region: dbConfig.Region,
+	}
 
-	client := dynamodb.NewFromConfig(aws.Config{
-		Region: config.Region,
-	})
+	if dbConfig.Endpoint != nil {
+		cfg.EndpointResolverWithOptions = aws.EndpointResolverWithOptionsFunc(
+			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				return aws.Endpoint{URL: *dbConfig.Endpoint}, nil
+			})
+	}
+
+	client := dynamodb.NewFromConfig(cfg)
 
 	return NewInputPluginDynamoDb(
 		client,
-		config.TableName,
+		dbConfig.TableName,
 		func(item map[string]types.AttributeValue) (interface{}, error) {
 			record := map[string]interface{}{}
 
 			for k, v := range item {
-				value, err := getValue(config.Schema[k], v)
+				value, err := getValue(dbConfig.Schema[k], v)
 				if err != nil {
 					return nil, err
 				}
