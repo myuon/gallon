@@ -3,17 +3,26 @@ package gallon
 import (
 	"cloud.google.com/go/bigquery"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 )
 
 type OutputPluginBigQuery struct {
-	client *bigquery.Client
+	client      *bigquery.Client
+	schema      bigquery.Schema
+	deserialize func(interface{}) ([]bigquery.Value, error)
 }
 
-func NewOutputPluginBigQuery(client *bigquery.Client) *OutputPluginBigQuery {
+func NewOutputPluginBigQuery(
+	client *bigquery.Client,
+	schema bigquery.Schema,
+	deserialize func(interface{}) ([]bigquery.Value, error),
+) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
-		client: client,
+		client:      client,
+		schema:      schema,
+		deserialize: deserialize,
 	}
 }
 
@@ -21,28 +30,30 @@ func (p *OutputPluginBigQuery) Load(
 	messages chan interface{},
 	datasetId string,
 	tableId string,
-	schema bigquery.Schema,
 ) error {
 	inserter := p.client.Dataset(datasetId).Table(tableId).Inserter()
 
+	var err error
+
+loop:
 	for {
 		select {
 		case msgs, ok := <-messages:
 			if !ok {
-				return nil
+				break loop
 			}
 
 			msgSlice := msgs.([]interface{})
 
 			saver := []*bigquery.ValuesSaver{}
 			for _, msg := range msgSlice {
-				values := []bigquery.Value{}
-				for _, v := range schema {
-					values = append(values, msg.(map[string]interface{})[v.Name])
+				values, err := p.deserialize(msg)
+				if err != nil {
+					err = errors.Join(err, errors.New("failed to deserialize dynamodb record: "+fmt.Sprintf("%v", msg)))
 				}
 
 				saver = append(saver, &bigquery.ValuesSaver{
-					Schema:   schema,
+					Schema:   p.schema,
 					InsertID: uuid.New().String(),
 					Row:      values,
 				})
@@ -55,4 +66,6 @@ func (p *OutputPluginBigQuery) Load(
 			fmt.Println("wrote", len(msgSlice), "items")
 		}
 	}
+
+	return err
 }

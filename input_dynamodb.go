@@ -10,19 +10,23 @@ import (
 )
 
 type InputPluginDynamoDb struct {
-	client *dynamodb.Client
+	client    *dynamodb.Client
+	serialize func(map[string]types.AttributeValue) (interface{}, error)
 }
 
-func NewInputPluginDynamoDb(client *dynamodb.Client) *InputPluginDynamoDb {
+func NewInputPluginDynamoDb(
+	client *dynamodb.Client,
+	serilize func(map[string]types.AttributeValue) (interface{}, error),
+) *InputPluginDynamoDb {
 	return &InputPluginDynamoDb{
-		client: client,
+		client:    client,
+		serialize: serilize,
 	}
 }
 
 func (p *InputPluginDynamoDb) Extract(
 	messages chan interface{},
 	tableName string,
-	serialize func(map[string]types.AttributeValue) (interface{}, error),
 ) error {
 	hasNext := true
 	lastEvaluatedKey := map[string]types.AttributeValue(nil)
@@ -51,7 +55,7 @@ func (p *InputPluginDynamoDb) Extract(
 
 		var msgs []interface{}
 		for _, item := range resp.Items {
-			record, err := serialize(item)
+			record, err := p.serialize(item)
 			if err != nil {
 				err = errors.Join(err, errors.New("failed to serialize dynamodb record: "+fmt.Sprintf("%v", item)))
 			}

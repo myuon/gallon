@@ -111,26 +111,39 @@ func run() error {
 
 	messages := make(chan interface{}, 1000)
 
-	inputPlugin := NewInputPluginDynamoDb(dynamoClient)
-	outputPlugin := NewOutputPluginBigQuery(bigqueryClient)
+	inputPlugin := NewInputPluginDynamoDb(
+		dynamoClient,
+		func(item map[string]types.AttributeValue) (interface{}, error) {
+			user := UserTable{}
+			if err := attributevalue.UnmarshalMap(item, &user); err != nil {
+				return nil, err
+			}
+
+			record, err := StructToJsonTagMap(user)
+			if err != nil {
+				return nil, err
+			}
+
+			return record, nil
+		},
+	)
+	outputPlugin := NewOutputPluginBigQuery(
+		bigqueryClient,
+		schema,
+		func(item interface{}) ([]bigquery.Value, error) {
+			values := []bigquery.Value{}
+			for _, v := range schema {
+				values = append(values, item.(map[string]interface{})[v.Name])
+			}
+
+			return values, nil
+		},
+	)
 
 	go func() {
 		if err := inputPlugin.Extract(
 			messages,
 			"users",
-			func(item map[string]types.AttributeValue) (interface{}, error) {
-				user := UserTable{}
-				if err := attributevalue.UnmarshalMap(item, &user); err != nil {
-					return nil, err
-				}
-
-				record, err := StructToJsonTagMap(user)
-				if err != nil {
-					return nil, err
-				}
-
-				return record, nil
-			},
 		); err != nil {
 			log.Fatal(err)
 		}
@@ -140,7 +153,6 @@ func run() error {
 		messages,
 		"test",
 		"users",
-		schema,
 	); err != nil {
 		log.Fatal(err)
 	}
