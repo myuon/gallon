@@ -2,7 +2,6 @@ package gallon
 
 import (
 	"github.com/go-logr/logr"
-	"log"
 	"sync"
 )
 
@@ -44,7 +43,7 @@ func (g *Gallon) Run() error {
 	go func() {
 		defer wg.Done()
 
-		log.Println("start load")
+		g.Logger.Info("start load")
 
 		if err := g.Output.Load(messages); err != nil {
 			g.Logger.Error(err, "failed to load")
