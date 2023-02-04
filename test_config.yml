@@ -1,0 +1,27 @@
+in:
+  type: dynamodb
+  region: ap-northeast-1
+  table: users
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: number
+    created_at:
+      type: number
+out:
+  type: bigquery
+  location: asia-northeast1
+  datasetId: test
+  tableId: users
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: integer
+    created_at:
+      type: integer

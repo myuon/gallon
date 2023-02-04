@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
+	"strings"
 )
 
 type OutputPluginBigQuery struct {
@@ -106,4 +108,74 @@ loop:
 	}
 
 	return nil
+}
+
+type OutputPluginBigQueryConfig struct {
+	Location  string                                            `yaml:"location"`
+	DatasetId string                                            `yaml:"datasetId"`
+	TableId   string                                            `yaml:"tableId"`
+	Schema    map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
+}
+
+type OutputPluginBigQueryConfigSchemaColumn struct {
+	Type string `yaml:"type"`
+}
+
+func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery, error) {
+	var config OutputPluginBigQueryConfig
+	if err := yaml.Unmarshal(configYml, &config); err != nil {
+		return nil, err
+	}
+
+	client, err := bigquery.NewClient(context.Background(), config.Location)
+	if err != nil {
+		return nil, err
+	}
+
+	schema := bigquery.Schema{}
+	for name, column := range config.Schema {
+		t, err := getType(column.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		schema = append(schema, &bigquery.FieldSchema{
+			Name: name,
+			Type: t,
+		})
+	}
+
+	return NewOutputPluginBigQuery(
+		client,
+		config.DatasetId,
+		config.TableId,
+		schema,
+		func(item interface{}) ([]bigquery.Value, error) {
+			values := []bigquery.Value{}
+			for _, v := range schema {
+				values = append(values, item.(map[string]interface{})[v.Name])
+			}
+
+			return values, nil
+		},
+	), nil
+}
+
+func getType(t string) (bigquery.FieldType, error) {
+	switch strings.ToUpper(t) {
+	case "STRING":
+		return bigquery.StringFieldType, nil
+	case "INTEGER":
+		return bigquery.IntegerFieldType, nil
+	case "FLOAT":
+		return bigquery.FloatFieldType, nil
+	case "BOOLEAN":
+		return bigquery.BooleanFieldType, nil
+	case "TIMESTAMP":
+		return bigquery.TimestampFieldType, nil
+	case "RECORD":
+		return bigquery.RecordFieldType, nil
+	}
+
+	return "", errors.New("unknown type: " + t)
 }
