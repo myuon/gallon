@@ -13,18 +13,22 @@ in:
     created_at:
       type: number
 out:
-  type: bigquery
-  location: asia-northeast1
-  projectId: default-364617
-  datasetId: test
-  tableId: users_test
-  # endpoint: "http://localhost:9050"
-  schema:
-    id:
-      type: string
-    name:
-      type: string
-    age:
-      type: integer
-    created_at:
-      type: integer
+  type: file
+  filepath: ./output.jsonl
+  format: jsonl
+#out:
+#  type: bigquery
+#  location: asia-northeast1
+#  projectId: default-364617
+#  datasetId: test
+#  tableId: users_test
+#  # endpoint: "http://localhost:9050"
+#  schema:
+#    id:
+#      type: string
+#    name:
+#      type: string
+#    age:
+#      type: integer
+#    created_at:
+#      type: integer

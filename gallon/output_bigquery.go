@@ -25,8 +25,8 @@ func NewOutputPluginBigQuery(
 	tableId string,
 	schema bigquery.Schema,
 	deserialize func(interface{}) ([]bigquery.Value, error),
-) *OutputPluginBigQuery {
-	return &OutputPluginBigQuery{
+) OutputPluginBigQuery {
+	return OutputPluginBigQuery{
 		client:      client,
 		datasetId:   datasetId,
 		tableId:     tableId,
@@ -123,10 +123,10 @@ type OutputPluginBigQueryConfigSchemaColumn struct {
 	Type string `yaml:"type"`
 }
 
-func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery, error) {
+func NewOutputPluginBigQueryFromConfig(configYml []byte) (OutputPluginBigQuery, error) {
 	var config OutputPluginBigQueryConfig
 	if err := yaml.Unmarshal(configYml, &config); err != nil {
-		return nil, err
+		return OutputPluginBigQuery{}, err
 	}
 
 	options := []option.ClientOption{}
@@ -137,14 +137,14 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 
 	client, err := bigquery.NewClient(context.Background(), config.ProjectId, options...)
 	if err != nil {
-		return nil, err
+		return OutputPluginBigQuery{}, err
 	}
 
 	schema := bigquery.Schema{}
 	for name, column := range config.Schema {
 		t, err := getType(column.Type)
 		if err != nil {
-			return nil, err
+			return OutputPluginBigQuery{}, err
 		}
 
 		schema = append(schema, &bigquery.FieldSchema{
