@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
 	"strings"
 )
@@ -114,6 +115,7 @@ type OutputPluginBigQueryConfig struct {
 	ProjectId string                                            `yaml:"projectId"`
 	DatasetId string                                            `yaml:"datasetId"`
 	TableId   string                                            `yaml:"tableId"`
+	Endpoint  *string                                           `yaml:"endpoint"`
 	Schema    map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
 }
 
@@ -127,7 +129,13 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		return nil, err
 	}
 
-	client, err := bigquery.NewClient(context.Background(), config.ProjectId)
+	options := []option.ClientOption{}
+
+	if config.Endpoint != nil {
+		options = append(options, option.WithEndpoint(*config.Endpoint))
+	}
+
+	client, err := bigquery.NewClient(context.Background(), config.ProjectId, options...)
 	if err != nil {
 		return nil, err
 	}

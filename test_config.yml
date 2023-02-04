@@ -17,6 +17,7 @@ out:
   projectId: test
   datasetId: test
   tableId: users
+  endpoint: "http://localhost:9050"
   schema:
     id:
       type: string
