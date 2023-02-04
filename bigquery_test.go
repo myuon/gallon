@@ -30,3 +30,31 @@ func BigQueryCheckIfTableExists(table *bigquery.Table) (bool, error) {
 
 	return true, nil
 }
+
+func CreateBigQueryTableIfNotExists(
+	bigqueryClient *bigquery.Client,
+	datasetId string,
+	tableId string,
+	schema bigquery.Schema,
+) error {
+	exists, err := BigQueryCheckIfTableExists(bigqueryClient.Dataset(datasetId).Table(tableId))
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		if err := bigqueryClient.Dataset(datasetId).Create(context.Background(), &bigquery.DatasetMetadata{
+			Location: "asia-northeast1",
+		}); err != nil {
+			return err
+		}
+
+		if err := bigqueryClient.Dataset(datasetId).Table(tableId).Create(context.Background(), &bigquery.TableMetadata{
+			Schema: schema,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

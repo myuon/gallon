@@ -53,8 +53,10 @@ func NewFakeUserTable() (UserTable, error) {
 }
 
 func InitDynamoDbData(dynamoClient *dynamodb.Client) error {
+	tableName := aws.String("users")
+
 	if err := CreateDynamoDbTableIfNotExists(dynamoClient, dynamodb.CreateTableInput{
-		TableName: aws.String("users"),
+		TableName: tableName,
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
 				AttributeName: aws.String("id"),
@@ -76,7 +78,7 @@ func InitDynamoDbData(dynamoClient *dynamodb.Client) error {
 			}
 
 			if _, err := dynamoClient.PutItem(context.TODO(), &dynamodb.PutItemInput{
-				TableName: aws.String("users"),
+				TableName: tableName,
 				Item: map[string]types.AttributeValue{
 					"id":         &types.AttributeValueMemberS{Value: v.ID},
 					"name":       &types.AttributeValueMemberS{Value: v.Name},
@@ -104,23 +106,8 @@ func run() error {
 		return err
 	}
 
-	exists, err := BigQueryCheckIfTableExists(bigqueryClient.Dataset("test").Table("users"))
-	if err != nil {
+	if err := CreateBigQueryTableIfNotExists(bigqueryClient, "test", "users", schema); err != nil {
 		return err
-	}
-
-	if !exists {
-		if err := bigqueryClient.Dataset("test").Create(context.Background(), &bigquery.DatasetMetadata{
-			Location: "asia-northeast1",
-		}); err != nil {
-			return err
-		}
-
-		if err := bigqueryClient.Dataset("test").Table("users").Create(context.Background(), &bigquery.TableMetadata{
-			Schema: schema,
-		}); err != nil {
-			return err
-		}
 	}
 
 	inserter := bigqueryClient.Dataset("test").Table("users").Inserter()
