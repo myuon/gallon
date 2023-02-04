@@ -37,7 +37,7 @@ func (p InputPluginDynamoDb) Extract(
 	hasNext := true
 	lastEvaluatedKey := map[string]types.AttributeValue(nil)
 
-	var err error
+	var tracedError error
 
 	for hasNext {
 		resp, err := p.client.Scan(
@@ -49,7 +49,7 @@ func (p InputPluginDynamoDb) Extract(
 			},
 		)
 		if err != nil {
-			err = errors.Join(err, errors.New("failed to scan dynamodb table: "+p.tableName))
+			tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan dynamodb table: %v (error: %v)", p.tableName, err))
 			break
 		}
 
@@ -64,7 +64,7 @@ func (p InputPluginDynamoDb) Extract(
 		for _, item := range resp.Items {
 			record, err := p.serialize(item)
 			if err != nil {
-				err = errors.Join(err, errors.New("failed to serialize dynamodb record: "+fmt.Sprintf("%v", item)))
+				tracedError = errors.Join(tracedError, errors.New("failed to serialize dynamodb record: "+fmt.Sprintf("%v", item)))
 				continue
 			}
 
@@ -78,14 +78,14 @@ func (p InputPluginDynamoDb) Extract(
 
 	close(messages)
 
-	return err
+	return tracedError
 }
 
 type InputPluginDynamoDbConfig struct {
-	TableName string                                           `yaml:"table_name"`
-	Schema    map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
-	Region    string                                           `yaml:"region"`
-	Endpoint  *string                                          `yaml:"endpoint"`
+	Table    string                                           `yaml:"table"`
+	Schema   map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
+	Region   string                                           `yaml:"region"`
+	Endpoint *string                                          `yaml:"endpoint"`
 }
 
 type InputPluginDynamoDbConfigSchemaColumn struct {
@@ -117,9 +117,13 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (InputPluginDynamoDb, er
 
 	client := dynamodb.NewFromConfig(cfg)
 
+	if dbConfig.Table == "" {
+		return InputPluginDynamoDb{}, fmt.Errorf("table_name is required")
+	}
+
 	return NewInputPluginDynamoDb(
 		client,
-		dbConfig.TableName,
+		dbConfig.Table,
 		func(item map[string]types.AttributeValue) (interface{}, error) {
 			record := map[string]interface{}{}
 
