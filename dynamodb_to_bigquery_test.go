@@ -105,10 +105,6 @@ func run() error {
 		return err
 	}
 
-	if err := CreateBigQueryTableIfNotExists(bigqueryClient, "test", "users", schema); err != nil {
-		return err
-	}
-
 	gallon := Gallon{
 		input: NewInputPluginDynamoDb(
 			dynamoClient,

@@ -37,7 +37,18 @@ var _ OutputPlugin = OutputPluginBigQuery{}
 func (p OutputPluginBigQuery) Load(
 	messages chan interface{},
 ) error {
-	inserter := p.client.Dataset(p.datasetId).Table(p.tableId).Inserter()
+	ctx := context.Background()
+
+	temporaryTable := p.client.Dataset(p.datasetId).Table(fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String()))
+	if err := temporaryTable.Create(ctx, &bigquery.TableMetadata{
+		Schema: p.schema,
+	}); err != nil {
+		return err
+	}
+
+	inserter := temporaryTable.Inserter()
+
+	loadedTotal := 0
 
 	var err error
 
@@ -69,9 +80,30 @@ loop:
 				return err
 			}
 
-			fmt.Println("wrote", len(msgSlice), "items")
+			loadedTotal += len(msgSlice)
+			fmt.Println("loaded", loadedTotal, "items")
 		}
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+	copier.WriteDisposition = bigquery.WriteTruncate
+
+	job, err := copier.Run(ctx)
+	if err != nil {
+		return err
+	}
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := status.Err(); err != nil {
+		return err
+	}
+
+	return nil
 }

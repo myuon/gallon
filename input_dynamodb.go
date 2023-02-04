@@ -67,7 +67,9 @@ func (p InputPluginDynamoDb) Extract(
 			msgs = append(msgs, record)
 		}
 
-		messages <- msgs
+		if len(msgs) > 0 {
+			messages <- msgs
+		}
 	}
 
 	close(messages)
