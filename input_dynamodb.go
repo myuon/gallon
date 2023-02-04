@@ -2,10 +2,11 @@ package gallon
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"log"
 )
 
 type InputPluginDynamoDb struct {
@@ -26,6 +27,8 @@ func (p *InputPluginDynamoDb) Extract(
 	hasNext := true
 	lastEvaluatedKey := map[string]types.AttributeValue(nil)
 
+	var err error
+
 	for hasNext {
 		resp, err := p.client.Scan(
 			context.TODO(),
@@ -36,7 +39,7 @@ func (p *InputPluginDynamoDb) Extract(
 			},
 		)
 		if err != nil {
-			log.Fatal(err)
+			err = errors.Join(err, errors.New("failed to scan dynamodb table: "+tableName))
 		}
 
 		if resp.LastEvaluatedKey != nil {
@@ -50,7 +53,7 @@ func (p *InputPluginDynamoDb) Extract(
 		for _, item := range resp.Items {
 			record, err := serialize(item)
 			if err != nil {
-				log.Fatal(err)
+				err = errors.Join(err, errors.New("failed to serialize dynamodb record: "+fmt.Sprintf("%v", item)))
 			}
 
 			msgs = append(msgs, record)
@@ -61,5 +64,5 @@ func (p *InputPluginDynamoDb) Extract(
 
 	close(messages)
 
-	return nil
+	return err
 }
