@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
 )
 
 type OutputPluginFile struct {
+	logger      logr.Logger
 	filepath    string
 	deserialize func(interface{}) ([]byte, error)
 }
@@ -17,20 +19,32 @@ type OutputPluginFile struct {
 func NewOutputPluginFile(
 	filepath string,
 	deserialize func(interface{}) ([]byte, error),
-) OutputPluginFile {
-	return OutputPluginFile{
+) *OutputPluginFile {
+	return &OutputPluginFile{
 		filepath:    filepath,
 		deserialize: deserialize,
 	}
 }
 
-var _ OutputPlugin = OutputPluginFile{}
+var _ OutputPlugin = &OutputPluginFile{}
 
-func (p OutputPluginFile) Load(messages chan interface{}) error {
+func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
+	p.logger = logger
+}
+
+func (p *OutputPluginFile) Load(messages chan interface{}) error {
 	fs, osErr := os.Create(p.filepath)
 	if osErr != nil {
 		return osErr
 	}
+
+	p.logger.Info(fmt.Sprintf("created file: %v", p.filepath))
+
+	defer func() {
+		if err := fs.Close(); err != nil {
+			p.logger.Error(err, "failed to close file")
+		}
+	}()
 
 	loadedTotal := 0
 
@@ -61,7 +75,7 @@ loop:
 			}
 
 			loadedTotal += len(msgSlice)
-			fmt.Printf("Loaded %d items\n", loadedTotal)
+			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
 		}
 	}
 

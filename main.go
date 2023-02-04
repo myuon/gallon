@@ -3,7 +3,8 @@ package main
 import (
 	"github.com/myuon/gallon/cmd"
 	"github.com/spf13/cobra"
-	"log"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var roomCmd = &cobra.Command{
@@ -13,9 +14,15 @@ var roomCmd = &cobra.Command{
 }
 
 func main() {
+	config := zap.NewDevelopmentConfig()
+	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	zapLog := zap.Must(config.Build())
+	defer zapLog.Sync()
+	zap.ReplaceGlobals(zapLog)
+
 	roomCmd.AddCommand(cmd.RunCmd)
 
 	if err := roomCmd.Execute(); err != nil {
-		log.Println(err)
+		zap.S().Error(err)
 	}
 }

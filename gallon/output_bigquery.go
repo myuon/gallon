@@ -6,15 +6,16 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
-	"log"
 	"os"
 	"strings"
 )
 
 type OutputPluginBigQuery struct {
+	logger      logr.Logger
 	client      *bigquery.Client
 	datasetId   string
 	tableId     string
@@ -28,8 +29,8 @@ func NewOutputPluginBigQuery(
 	tableId string,
 	schema bigquery.Schema,
 	deserialize func(interface{}) ([]bigquery.Value, error),
-) OutputPluginBigQuery {
-	return OutputPluginBigQuery{
+) *OutputPluginBigQuery {
+	return &OutputPluginBigQuery{
 		client:      client,
 		datasetId:   datasetId,
 		tableId:     tableId,
@@ -38,9 +39,13 @@ func NewOutputPluginBigQuery(
 	}
 }
 
-var _ OutputPlugin = OutputPluginBigQuery{}
+var _ OutputPlugin = &OutputPluginBigQuery{}
 
-func (p OutputPluginBigQuery) Load(
+func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
+	p.logger = logger
+}
+
+func (p *OutputPluginBigQuery) Load(
 	messages chan interface{},
 ) error {
 	ctx := context.Background()
@@ -54,9 +59,9 @@ func (p OutputPluginBigQuery) Load(
 	}
 	defer func() {
 		if err := temporaryTable.Delete(ctx); err != nil {
-			log.Printf("failed to delete temporary table: %v", err)
+			p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
 		} else {
-			log.Printf("deleted temporary table %v\n", temporaryTable.TableID)
+			p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
 		}
 	}()
 
@@ -69,11 +74,11 @@ func (p OutputPluginBigQuery) Load(
 	}
 	defer func() {
 		if err := temporaryFile.Close(); err != nil {
-			log.Printf("failed to close temporary file: %v", err)
+			p.logger.Error(err, "failed to close temporary file", "filePath", temporaryCsvFilePath)
 		}
 
 		if err := os.Remove(temporaryFile.Name()); err != nil {
-			log.Printf("failed to remove temporary file: %v", err)
+			p.logger.Error(err, "failed to remove temporary file", "filePath", temporaryCsvFilePath)
 		}
 	}()
 
@@ -108,7 +113,7 @@ loop:
 			}
 
 			loadedTotal += len(msgSlice)
-			log.Printf("loaded %v records\n", loadedTotal)
+			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
 		}
 	}
 
@@ -118,7 +123,7 @@ loop:
 
 	temporaryFileWriter.Flush()
 
-	log.Printf("loading into %v\n", temporaryTable.TableID)
+	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
 	temporaryFile, err = os.Open(temporaryCsvFilePath)
 	if err != nil {
@@ -141,7 +146,7 @@ loop:
 		return err
 	}
 
-	log.Printf("loaded\n")
+	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
 
 	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
 	copier.WriteDisposition = bigquery.WriteTruncate
@@ -158,6 +163,8 @@ loop:
 		return err
 	}
 
+	p.logger.Info(fmt.Sprintf("copied from %v to %v", temporaryTable.TableID, p.tableId))
+
 	return nil
 }
 
@@ -173,10 +180,10 @@ type OutputPluginBigQueryConfigSchemaColumn struct {
 	Type string `yaml:"type"`
 }
 
-func NewOutputPluginBigQueryFromConfig(configYml []byte) (OutputPluginBigQuery, error) {
+func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery, error) {
 	var config OutputPluginBigQueryConfig
 	if err := yaml.Unmarshal(configYml, &config); err != nil {
-		return OutputPluginBigQuery{}, err
+		return nil, err
 	}
 
 	options := []option.ClientOption{}
@@ -187,14 +194,14 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (OutputPluginBigQuery, 
 
 	client, err := bigquery.NewClient(context.Background(), config.ProjectId, options...)
 	if err != nil {
-		return OutputPluginBigQuery{}, err
+		return nil, err
 	}
 
 	schema := bigquery.Schema{}
 	for name, column := range config.Schema {
 		t, err := getType(column.Type)
 		if err != nil {
-			return OutputPluginBigQuery{}, err
+			return nil, err
 		}
 
 		schema = append(schema, &bigquery.FieldSchema{

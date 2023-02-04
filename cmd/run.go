@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"errors"
+	"github.com/go-logr/zapr"
 	"github.com/myuon/gallon/gallon"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 	"log"
 	"os"
@@ -80,6 +82,7 @@ func run(configFile string) error {
 	}
 
 	g := gallon.Gallon{
+		Logger: zapr.NewLogger(zap.L()),
 		Input:  input,
 		Output: output,
 	}

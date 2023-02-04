@@ -1,0 +1,18 @@
+in:
+  type: dynamodb
+  region: ap-northeast-1
+  table: users
+  endpoint: "http://localhost:8000"
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: number
+    created_at:
+      type: number
+out:
+  type: file
+  filepath: ./output.jsonl
+  format: jsonl

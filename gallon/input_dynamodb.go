@@ -8,10 +8,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 )
 
 type InputPluginDynamoDb struct {
+	logger    logr.Logger
 	client    *dynamodb.Client
 	tableName string
 	serialize func(map[string]types.AttributeValue) (interface{}, error)
@@ -21,23 +23,28 @@ func NewInputPluginDynamoDb(
 	client *dynamodb.Client,
 	tableName string,
 	serialize func(map[string]types.AttributeValue) (interface{}, error),
-) InputPluginDynamoDb {
-	return InputPluginDynamoDb{
+) *InputPluginDynamoDb {
+	return &InputPluginDynamoDb{
 		client:    client,
 		tableName: tableName,
 		serialize: serialize,
 	}
 }
 
-var _ InputPlugin = InputPluginDynamoDb{}
+var _ InputPlugin = &InputPluginDynamoDb{}
 
-func (p InputPluginDynamoDb) Extract(
+func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
+	p.logger = logger
+}
+
+func (p *InputPluginDynamoDb) Extract(
 	messages chan interface{},
 ) error {
 	hasNext := true
 	lastEvaluatedKey := map[string]types.AttributeValue(nil)
 
 	var tracedError error
+	extractedTotal := 0
 
 	for hasNext {
 		resp, err := p.client.Scan(
@@ -73,6 +80,9 @@ func (p InputPluginDynamoDb) Extract(
 
 		if len(msgs) > 0 {
 			messages <- msgs
+
+			extractedTotal += len(msgs)
+			p.logger.Info(fmt.Sprintf("extracted %d records", extractedTotal))
 		}
 	}
 
@@ -92,10 +102,10 @@ type InputPluginDynamoDbConfigSchemaColumn struct {
 	Type string `yaml:"type"`
 }
 
-func NewInputPluginDynamoDbFromConfig(configYml []byte) (InputPluginDynamoDb, error) {
+func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, error) {
 	var dbConfig InputPluginDynamoDbConfig
 	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
-		return InputPluginDynamoDb{}, err
+		return nil, err
 	}
 
 	cfg := aws.Config{
@@ -118,7 +128,7 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (InputPluginDynamoDb, er
 	client := dynamodb.NewFromConfig(cfg)
 
 	if dbConfig.Table == "" {
-		return InputPluginDynamoDb{}, fmt.Errorf("table_name is required")
+		return nil, fmt.Errorf("table_name is required")
 	}
 
 	return NewInputPluginDynamoDb(
