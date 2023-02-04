@@ -10,17 +10,23 @@ import (
 
 type OutputPluginBigQuery struct {
 	client      *bigquery.Client
+	datasetId   string
+	tableId     string
 	schema      bigquery.Schema
 	deserialize func(interface{}) ([]bigquery.Value, error)
 }
 
 func NewOutputPluginBigQuery(
 	client *bigquery.Client,
+	datasetId string,
+	tableId string,
 	schema bigquery.Schema,
 	deserialize func(interface{}) ([]bigquery.Value, error),
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
 		client:      client,
+		datasetId:   datasetId,
+		tableId:     tableId,
 		schema:      schema,
 		deserialize: deserialize,
 	}
@@ -28,10 +34,8 @@ func NewOutputPluginBigQuery(
 
 func (p *OutputPluginBigQuery) Load(
 	messages chan interface{},
-	datasetId string,
-	tableId string,
 ) error {
-	inserter := p.client.Dataset(datasetId).Table(tableId).Inserter()
+	inserter := p.client.Dataset(p.datasetId).Table(p.tableId).Inserter()
 
 	var err error
 

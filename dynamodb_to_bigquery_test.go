@@ -113,6 +113,7 @@ func run() error {
 
 	inputPlugin := NewInputPluginDynamoDb(
 		dynamoClient,
+		"users",
 		func(item map[string]types.AttributeValue) (interface{}, error) {
 			user := UserTable{}
 			if err := attributevalue.UnmarshalMap(item, &user); err != nil {
@@ -129,6 +130,8 @@ func run() error {
 	)
 	outputPlugin := NewOutputPluginBigQuery(
 		bigqueryClient,
+		"test",
+		"users",
 		schema,
 		func(item interface{}) ([]bigquery.Value, error) {
 			values := []bigquery.Value{}
@@ -141,19 +144,12 @@ func run() error {
 	)
 
 	go func() {
-		if err := inputPlugin.Extract(
-			messages,
-			"users",
-		); err != nil {
+		if err := inputPlugin.Extract(messages); err != nil {
 			log.Fatal(err)
 		}
 	}()
 
-	if err := outputPlugin.Load(
-		messages,
-		"test",
-		"users",
-	); err != nil {
+	if err := outputPlugin.Load(messages); err != nil {
 		log.Fatal(err)
 	}
 
