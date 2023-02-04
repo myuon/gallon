@@ -52,35 +52,23 @@ func NewFakeUserTable() (UserTable, error) {
 	return v, nil
 }
 
-func run() error {
-	dynamoClient := NewDynamoDbLocalClient()
-
-	// check table exists
-	exists, err := DynamoDbCheckIfTableExists(dynamoClient, "users")
-	if err != nil {
-		return err
-	}
-
-	if !exists {
-		if _, err := dynamoClient.CreateTable(context.TODO(), &dynamodb.CreateTableInput{
-			TableName: aws.String("users"),
-			AttributeDefinitions: []types.AttributeDefinition{
-				{
-					AttributeName: aws.String("id"),
-					AttributeType: types.ScalarAttributeTypeS,
-				},
+func InitDynamoDbData(dynamoClient *dynamodb.Client) error {
+	if err := CreateDynamoDbTableIfNotExists(dynamoClient, dynamodb.CreateTableInput{
+		TableName: aws.String("users"),
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("id"),
+				AttributeType: types.ScalarAttributeTypeS,
 			},
-			KeySchema: []types.KeySchemaElement{
-				{
-					AttributeName: aws.String("id"),
-					KeyType:       types.KeyTypeHash,
-				},
+		},
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("id"),
+				KeyType:       types.KeyTypeHash,
 			},
-			BillingMode: types.BillingModePayPerRequest,
-		}); err != nil {
-			return err
-		}
-
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	}, func() error {
 		for i := 0; i < 1000; i++ {
 			v, err := NewFakeUserTable()
 			if err != nil {
@@ -99,16 +87,28 @@ func run() error {
 				return err
 			}
 		}
+
+		return nil
+	}); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func run() error {
+	dynamoClient := NewDynamoDbLocalClient()
 	bigqueryClient := NewBigQueryLocalClient()
 
-	exists, err = BigQueryCheckIfTableExists(bigqueryClient.Dataset("test").Table("users"))
+	if err := InitDynamoDbData(dynamoClient); err != nil {
+		return err
+	}
+
+	exists, err := BigQueryCheckIfTableExists(bigqueryClient.Dataset("test").Table("users"))
 	if err != nil {
 		return err
 	}
 
-	// check dataset exists
 	if !exists {
 		if err := bigqueryClient.Dataset("test").Create(context.Background(), &bigquery.DatasetMetadata{
 			Location: "asia-northeast1",

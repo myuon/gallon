@@ -43,3 +43,30 @@ func DynamoDbCheckIfTableExists(svc *dynamodb.Client, name string) (bool, error)
 
 	return true, nil
 }
+
+func CreateDynamoDbTableIfNotExists(
+	dynamoClient *dynamodb.Client,
+	input dynamodb.CreateTableInput,
+	onCreate func() error,
+) error {
+	tableName := *input.TableName
+
+	exists, err := DynamoDbCheckIfTableExists(dynamoClient, tableName)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		if _, err := dynamoClient.CreateTable(context.TODO(), &input); err != nil {
+			return err
+		}
+
+		if onCreate != nil {
+			if err := onCreate(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
