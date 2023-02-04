@@ -12,7 +12,7 @@ import (
 func NewDynamoDbLocalClient() *dynamodb.Client {
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
-		config.WithRegion("us-east-1"),
+		config.WithRegion("ap-northeast-1"),
 		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
 			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 				return aws.Endpoint{URL: "http://localhost:8000"}, nil

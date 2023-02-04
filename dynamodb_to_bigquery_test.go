@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v6"
-	"github.com/google/uuid"
 	"log"
 	"testing"
 )
@@ -110,11 +109,10 @@ func run() error {
 		return err
 	}
 
-	inserter := bigqueryClient.Dataset("test").Table("users").Inserter()
-
 	messages := make(chan interface{}, 1000)
 
 	inputPlugin := NewInputPluginDynamoDb(dynamoClient)
+	outputPlugin := NewOutputPluginBigQuery(bigqueryClient)
 
 	go func() {
 		if err := inputPlugin.Extract(
@@ -138,36 +136,16 @@ func run() error {
 		}
 	}()
 
-	for {
-		select {
-		case msgs, ok := <-messages:
-			if !ok {
-				return nil
-			}
-
-			msgSlice := msgs.([]interface{})
-
-			saver := []*bigquery.ValuesSaver{}
-			for _, msg := range msgSlice {
-				values := []bigquery.Value{}
-				for _, v := range schema {
-					values = append(values, msg.(map[string]interface{})[v.Name])
-				}
-
-				saver = append(saver, &bigquery.ValuesSaver{
-					Schema:   schema,
-					InsertID: uuid.New().String(),
-					Row:      values,
-				})
-			}
-
-			if err := inserter.Put(context.Background(), saver); err != nil {
-				return err
-			}
-
-			fmt.Println("wrote", len(msgSlice), "items")
-		}
+	if err := outputPlugin.Load(
+		messages,
+		"test",
+		"users",
+		schema,
+	); err != nil {
+		log.Fatal(err)
 	}
+
+	return nil
 }
 
 func Test_run(t *testing.T) {
