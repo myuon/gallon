@@ -3,12 +3,14 @@ package gallon
 import (
 	"cloud.google.com/go/bigquery"
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -43,16 +45,39 @@ func (p OutputPluginBigQuery) Load(
 ) error {
 	ctx := context.Background()
 
-	temporaryTable := p.client.Dataset(p.datasetId).Table(fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String()))
+	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
+	temporaryTable := p.client.Dataset(p.datasetId).Table(temporaryTableId)
 	if err := temporaryTable.Create(ctx, &bigquery.TableMetadata{
 		Schema: p.schema,
 	}); err != nil {
 		return err
 	}
-
-	inserter := temporaryTable.Inserter()
+	defer func() {
+		if err := temporaryTable.Delete(ctx); err != nil {
+			log.Printf("failed to delete temporary table: %v", err)
+		} else {
+			log.Printf("deleted temporary table %v\n", temporaryTable.TableID)
+		}
+	}()
 
 	loadedTotal := 0
+
+	temporaryCsvFilePath := fmt.Sprintf("%v.csv", temporaryTableId)
+	temporaryFile, err := os.Create(temporaryCsvFilePath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := temporaryFile.Close(); err != nil {
+			log.Printf("failed to close temporary file: %v", err)
+		}
+
+		if err := os.Remove(temporaryFile.Name()); err != nil {
+			log.Printf("failed to remove temporary file: %v", err)
+		}
+	}()
+
+	temporaryFileWriter := csv.NewWriter(temporaryFile)
 
 	var tracedError error
 
@@ -66,22 +91,20 @@ loop:
 
 			msgSlice := msgs.([]interface{})
 
-			saver := []*bigquery.ValuesSaver{}
 			for _, msg := range msgSlice {
 				values, err := p.deserialize(msg)
 				if err != nil {
 					tracedError = errors.Join(tracedError, fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err))
 				}
 
-				saver = append(saver, &bigquery.ValuesSaver{
-					Schema:   p.schema,
-					InsertID: uuid.New().String(),
-					Row:      values,
-				})
-			}
+				cells := []string{}
+				for _, value := range values {
+					cells = append(cells, fmt.Sprintf("%v", value))
+				}
 
-			if err := inserter.Put(context.Background(), saver); err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to insert records: %v (error: %v)", saver, err))
+				if err := temporaryFileWriter.Write(cells); err != nil {
+					tracedError = errors.Join(tracedError, fmt.Errorf("failed to write csv record: %v (error: %v)", cells, err))
+				}
 			}
 
 			loadedTotal += len(msgSlice)
@@ -93,14 +116,20 @@ loop:
 		return tracedError
 	}
 
-	log.Printf("loaded into %v\n", temporaryTable.TableID)
+	temporaryFileWriter.Flush()
 
-	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
-	copier.WriteDisposition = bigquery.WriteTruncate
+	log.Printf("loading into %v\n", temporaryTable.TableID)
 
-	log.Printf("copying from %v to %v\n", temporaryTable.TableID, p.tableId)
+	temporaryFile, err = os.Open(temporaryCsvFilePath)
+	if err != nil {
+		return err
+	}
+	source := bigquery.NewReaderSource(temporaryFile)
 
-	job, err := copier.Run(ctx)
+	loader := temporaryTable.LoaderFrom(source)
+	loader.WriteDisposition = bigquery.WriteTruncate
+
+	job, err := loader.Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -108,18 +137,26 @@ loop:
 	if err != nil {
 		return err
 	}
-
 	if err := status.Err(); err != nil {
 		return err
 	}
 
-	log.Printf("copied\n")
+	log.Printf("loaded\n")
 
-	if err := temporaryTable.Delete(ctx); err != nil {
+	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+	copier.WriteDisposition = bigquery.WriteTruncate
+
+	job, err = copier.Run(ctx)
+	if err != nil {
 		return err
 	}
-
-	log.Printf("deleted temporary table %v\n", temporaryTable.TableID)
+	status, err = job.Wait(ctx)
+	if err != nil {
+		return err
+	}
+	if err := status.Err(); err != nil {
+		return err
+	}
 
 	return nil
 }
