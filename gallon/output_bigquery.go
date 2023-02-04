@@ -111,7 +111,7 @@ loop:
 }
 
 type OutputPluginBigQueryConfig struct {
-	Location  string                                            `yaml:"location"`
+	ProjectId string                                            `yaml:"projectId"`
 	DatasetId string                                            `yaml:"datasetId"`
 	TableId   string                                            `yaml:"tableId"`
 	Schema    map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
@@ -127,7 +127,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		return nil, err
 	}
 
-	client, err := bigquery.NewClient(context.Background(), config.Location)
+	client, err := bigquery.NewClient(context.Background(), config.ProjectId)
 	if err != nil {
 		return nil, err
 	}

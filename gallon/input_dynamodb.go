@@ -49,6 +49,7 @@ func (p InputPluginDynamoDb) Extract(
 		)
 		if err != nil {
 			err = errors.Join(err, errors.New("failed to scan dynamodb table: "+p.tableName))
+			break
 		}
 
 		if resp.LastEvaluatedKey != nil {
@@ -63,6 +64,7 @@ func (p InputPluginDynamoDb) Extract(
 			record, err := p.serialize(item)
 			if err != nil {
 				err = errors.Join(err, errors.New("failed to serialize dynamodb record: "+fmt.Sprintf("%v", item)))
+				continue
 			}
 
 			msgs = append(msgs, record)
