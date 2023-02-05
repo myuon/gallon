@@ -71,7 +71,7 @@ func (p *InputPluginDynamoDb) Extract(
 		for _, item := range resp.Items {
 			record, err := p.serialize(item)
 			if err != nil {
-				tracedError = errors.Join(tracedError, errors.New("failed to serialize dynamodb record: "+fmt.Sprintf("%v", item)))
+				tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize dynamodb record: %v (error: %w)", item, err))
 				continue
 			}
 
