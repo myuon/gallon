@@ -1,4 +1,4 @@
-package test
+package mysql
 
 import (
 	"context"
@@ -129,7 +129,7 @@ func TestMain(m *testing.M) {
 	}()
 
 	if err = pool.Retry(func() error {
-		log.Println("Trying to connect to mysql...")
+		log.Println("Trying to connect to database...")
 
 		var err error
 		db, err = sql.Open("mysql", fmt.Sprintf("root:root@(localhost:%v)/test?parseTime=true", port))

@@ -14,17 +14,20 @@ type InputPluginSql struct {
 	logger    logr.Logger
 	client    *sql.DB
 	tableName string
+	driver    string
 	serialize func(map[string]interface{}) (interface{}, error)
 }
 
 func NewInputPluginSql(
 	client *sql.DB,
 	tableName string,
+	driver string,
 	serialize func(map[string]interface{}) (interface{}, error),
 ) *InputPluginSql {
 	return &InputPluginSql{
 		client:    client,
 		tableName: tableName,
+		driver:    driver,
 		serialize: serialize,
 	}
 }
@@ -44,10 +47,22 @@ func (p *InputPluginSql) Extract(
 	var tracedError error
 	extractedTotal := 0
 
-	query, err := p.client.Prepare(fmt.Sprintf(
-		"SELECT * FROM %v LIMIT 100 OFFSET ?",
-		p.tableName,
-	))
+	pagedQueryStatement := ""
+	if p.driver == "mysql" {
+		pagedQueryStatement = fmt.Sprintf(
+			"SELECT * FROM %v LIMIT 100 OFFSET ?",
+			p.tableName,
+		)
+	} else if p.driver == "postgres" {
+		pagedQueryStatement = fmt.Sprintf(
+			"SELECT * FROM %v LIMIT 100 OFFSET $1",
+			p.tableName,
+		)
+	} else {
+		return fmt.Errorf("unsupported driver: %v", p.driver)
+	}
+
+	query, err := p.client.Prepare(pagedQueryStatement)
 	if err != nil {
 		return err
 	}
@@ -109,6 +124,9 @@ func (p *InputPluginSql) Extract(
 		}
 
 		page++
+	}
+	if extractedTotal == 0 {
+		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))
 	}
 
 	close(messages)
@@ -180,6 +198,7 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 	return NewInputPluginSql(
 		db,
 		dbConfig.Table,
+		dbConfig.Driver,
 		func(item map[string]interface{}) (interface{}, error) {
 			record := map[string]interface{}{}
 

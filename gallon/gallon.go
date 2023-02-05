@@ -1,6 +1,8 @@
 package gallon
 
 import (
+	"errors"
+	"fmt"
 	"github.com/go-logr/logr"
 	"sync"
 )
@@ -28,6 +30,8 @@ func (g *Gallon) Run() error {
 	messages := make(chan interface{}, 1000)
 	wg := sync.WaitGroup{}
 
+	var gallonError error
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -35,6 +39,7 @@ func (g *Gallon) Run() error {
 		g.Logger.Info("start extract")
 
 		if err := g.Input.Extract(messages); err != nil {
+			gallonError = errors.Join(gallonError, fmt.Errorf("failed to extract: %w", err))
 			g.Logger.Error(err, "failed to extract")
 			close(messages)
 		}
@@ -47,12 +52,12 @@ func (g *Gallon) Run() error {
 		g.Logger.Info("start load")
 
 		if err := g.Output.Load(messages); err != nil {
+			gallonError = errors.Join(gallonError, fmt.Errorf("failed to load: %w", err))
 			g.Logger.Error(err, "failed to load")
-			close(messages)
 		}
 	}()
 
 	wg.Wait()
 
-	return nil
+	return gallonError
 }
