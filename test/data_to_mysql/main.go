@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
@@ -38,6 +37,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	if _, err := db.Query(strings.Join([]string{
 		"CREATE TABLE IF NOT EXISTS users (",
@@ -51,18 +55,15 @@ func run() error {
 		return err
 	}
 
+	query, err := db.Prepare("INSERT INTO users (id, name, age, created_at) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+
 	for i := 0; i < 1000; i++ {
 		v, _ := NewFakeUserTable()
 
-		if _, err := db.Query(
-			fmt.Sprintf(
-				"INSERT INTO users (id, name, age, created_at) VALUES ('%v', '%v', '%v', '%v');",
-				v.ID,
-				v.Name,
-				v.Age,
-				v.CreatedAt,
-			),
-		); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt); err != nil {
 			return err
 		}
 	}
