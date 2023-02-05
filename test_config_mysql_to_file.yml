@@ -1,0 +1,16 @@
+in:
+  type: sql
+  table: users
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: number
+    created_at:
+      type: number
+out:
+  type: file
+  filepath: ./output.jsonl
+  format: jsonl

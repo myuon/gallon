@@ -8,32 +8,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type InputPluginMySql struct {
+type InputPluginSql struct {
 	logger    logr.Logger
 	client    *sql.DB
 	tableName string
 	serialize func(map[string]interface{}) (interface{}, error)
 }
 
-func NewInputPluginMySql(
+func NewInputPluginSql(
 	client *sql.DB,
 	tableName string,
 	serialize func(map[string]interface{}) (interface{}, error),
-) *InputPluginMySql {
-	return &InputPluginMySql{
+) *InputPluginSql {
+	return &InputPluginSql{
 		client:    client,
 		tableName: tableName,
 		serialize: serialize,
 	}
 }
 
-var _ InputPlugin = &InputPluginMySql{}
+var _ InputPlugin = &InputPluginSql{}
 
-func (p *InputPluginMySql) ReplaceLogger(logger logr.Logger) {
+func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
-func (p *InputPluginMySql) Extract(
+func (p *InputPluginSql) Extract(
 	messages chan interface{},
 ) error {
 	hasNext := true
@@ -56,7 +56,7 @@ func (p *InputPluginMySql) Extract(
 		for rows.Next() {
 			var record map[string]interface{}
 			if err := rows.Scan(&record); err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan mysql table: %v (error: %v)", p.tableName, err))
+				tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err))
 				continue
 			}
 
@@ -80,18 +80,18 @@ func (p *InputPluginMySql) Extract(
 	return tracedError
 }
 
-type InputPluginMySqlConfig struct {
-	Table       string                                        `yaml:"table"`
-	DatabaseUrl string                                        `yaml:"database_url"`
-	Driver      string                                        `yaml:"driver"`
-	Schema      map[string]InputPluginMySqlConfigSchemaColumn `yaml:"schema"`
+type InputPluginSqlConfig struct {
+	Table       string                                      `yaml:"table"`
+	DatabaseUrl string                                      `yaml:"database_url"`
+	Driver      string                                      `yaml:"driver"`
+	Schema      map[string]InputPluginSqlConfigSchemaColumn `yaml:"schema"`
 }
 
-type InputPluginMySqlConfigSchemaColumn struct {
+type InputPluginSqlConfigSchemaColumn struct {
 	Type string `yaml:"type"`
 }
 
-func (c InputPluginMySqlConfigSchemaColumn) getValue(value interface{}) (interface{}, error) {
+func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface{}, error) {
 	switch c.Type {
 	case "string":
 		v, ok := value.(string)
@@ -126,8 +126,8 @@ func (c InputPluginMySqlConfigSchemaColumn) getValue(value interface{}) (interfa
 	}
 }
 
-func NewInputPluginMySqlFromConfig(configYml []byte) (*InputPluginMySql, error) {
-	var dbConfig InputPluginMySqlConfig
+func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
+	var dbConfig InputPluginSqlConfig
 	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func NewInputPluginMySqlFromConfig(configYml []byte) (*InputPluginMySql, error) 
 		return nil, err
 	}
 
-	return NewInputPluginMySql(
+	return NewInputPluginSql(
 		db,
 		dbConfig.Table,
 		func(item map[string]interface{}) (interface{}, error) {

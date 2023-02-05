@@ -101,8 +101,8 @@ func findInputPlugin(config GallonConfig) (gallon.InputPlugin, error) {
 
 	if t == "dynamodb" {
 		return gallon.NewInputPluginDynamoDbFromConfig(yml)
-	} else if t == "mysql" {
-		return gallon.NewInputPluginMySqlFromConfig(yml)
+	} else if t == "sql" {
+		return gallon.NewInputPluginSqlFromConfig(yml)
 	}
 
 	return nil, errors.New("plugin not found: " + t)
