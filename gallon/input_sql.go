@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
 
 type InputPluginSql struct {
@@ -42,22 +45,47 @@ func (p *InputPluginSql) Extract(
 	var tracedError error
 	extractedTotal := 0
 
+	query, err := p.client.Prepare(fmt.Sprintf(
+		"SELECT * FROM %v LIMIT 100 OFFSET ?",
+		p.tableName,
+	))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := query.Close(); err != nil {
+			tracedError = errors.Join(tracedError, fmt.Errorf("failed to close sql query: %v (error: %v)", p.tableName, err))
+		}
+	}()
+
 	for hasNext {
-		rows, err := p.client.Query(fmt.Sprintf(
-			"SELECT * FROM %v LIMIT 100 OFFSET %v",
-			p.tableName,
-			page*100,
-		))
+		rows, err := query.Query(page * 100)
+		if err != nil {
+			return err
+		}
+
+		cols, err := rows.Columns()
 		if err != nil {
 			return err
 		}
 
 		msgs := []interface{}{}
 		for rows.Next() {
-			var record map[string]interface{}
-			if err := rows.Scan(&record); err != nil {
+			columns := make([]interface{}, len(cols))
+			columnPointers := make([]interface{}, len(cols))
+			for i := range columns {
+				columnPointers[i] = &columns[i]
+			}
+
+			if err := rows.Scan(columnPointers...); err != nil {
 				tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err))
 				continue
+			}
+
+			record := map[string]interface{}{}
+			for i, colName := range cols {
+				val := columnPointers[i].(*interface{})
+				record[colName] = *val
 			}
 
 			msgs = append(msgs, record)

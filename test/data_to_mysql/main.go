@@ -59,6 +59,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := query.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	for i := 0; i < 1000; i++ {
 		v, _ := NewFakeUserTable()

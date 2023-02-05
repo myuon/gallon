@@ -5,4 +5,7 @@ down:
 	docker compose down
 
 migrate-mysql:
-	go run ./test/data_to_mysql/main.go
+	go1.20 run ./test/data_to_mysql/main.go
+
+run:
+	go1.20 run main.go run $(file)

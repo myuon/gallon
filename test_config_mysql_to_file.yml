@@ -1,6 +1,8 @@
 in:
   type: sql
+  driver: mysql
   table: users
+  database_url: root:root@tcp(localhost:3306)/test
   schema:
     id:
       type: string
