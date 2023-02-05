@@ -14,3 +14,13 @@ services:
     ports:
       - "9050:9050"
     command: "bigquery-emulator --project=test"
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: test
+    volumes:
+      - "./docker/mysql:/docker-entrypoint-initdb.d"
