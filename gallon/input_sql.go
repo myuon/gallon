@@ -146,13 +146,18 @@ type InputPluginSqlConfigSchemaColumn struct {
 func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface{}, error) {
 	switch c.Type {
 	case "string":
-		// Since sql driver returns []byte for string, we need to convert it to string
-		v, ok := value.([]byte)
-		if !ok {
-			return nil, fmt.Errorf("value is not string: %v", value)
+		v, ok := value.(string)
+		if ok {
+			return v, nil
 		}
 
-		return string(v), nil
+		// Since mysql driver returns []byte for string, we need to convert it to string
+		b, ok := value.([]byte)
+		if ok {
+			return string(b), nil
+		}
+
+		return nil, fmt.Errorf("value is not string: %v", value)
 	case "int":
 		v, ok := value.(int64)
 		if !ok {
