@@ -36,6 +36,7 @@ func (g *Gallon) Run() error {
 
 		if err := g.Input.Extract(messages); err != nil {
 			g.Logger.Error(err, "failed to extract")
+			close(messages)
 		}
 	}()
 
@@ -47,6 +48,7 @@ func (g *Gallon) Run() error {
 
 		if err := g.Output.Load(messages); err != nil {
 			g.Logger.Error(err, "failed to load")
+			close(messages)
 		}
 	}()
 

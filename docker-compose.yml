@@ -22,5 +22,6 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: test
+      MYSQL_CHARSET: utf8mb4
     volumes:
       - "./docker/mysql:/docker-entrypoint-initdb.d"

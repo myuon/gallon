@@ -9,9 +9,9 @@ in:
     name:
       type: string
     age:
-      type: number
+      type: int
     created_at:
-      type: number
+      type: int
 out:
   type: file
   filepath: ./output.jsonl

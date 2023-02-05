@@ -5,10 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
-	"gopkg.in/yaml.v3"
-
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	"gopkg.in/yaml.v3"
 )
 
 type InputPluginSql struct {
@@ -88,7 +87,13 @@ func (p *InputPluginSql) Extract(
 				record[colName] = *val
 			}
 
-			msgs = append(msgs, record)
+			r, err := p.serialize(record)
+			if err != nil {
+				tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.tableName, err))
+				continue
+			}
+
+			msgs = append(msgs, r)
 		}
 
 		if len(msgs) > 0 {
@@ -122,14 +127,15 @@ type InputPluginSqlConfigSchemaColumn struct {
 func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface{}, error) {
 	switch c.Type {
 	case "string":
-		v, ok := value.(string)
+		// Since sql driver returns []byte for string, we need to convert it to string
+		v, ok := value.([]byte)
 		if !ok {
 			return nil, fmt.Errorf("value is not string: %v", value)
 		}
 
-		return v, nil
+		return string(v), nil
 	case "int":
-		v, ok := value.(int)
+		v, ok := value.(int64)
 		if !ok {
 			return nil, fmt.Errorf("value is not int: %v", value)
 		}
@@ -174,7 +180,7 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 			for k, v := range item {
 				value, err := dbConfig.Schema[k].getValue(v)
 				if err != nil {
-					return nil, err
+					return nil, errors.Join(err, fmt.Errorf("failed to get value for column: %v", k))
 				}
 
 				record[k] = value
