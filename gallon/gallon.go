@@ -35,13 +35,13 @@ func (g *Gallon) Run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(messages)
 
 		g.Logger.Info("start extract")
 
 		if err := g.Input.Extract(messages); err != nil {
 			gallonError = errors.Join(gallonError, fmt.Errorf("failed to extract: %w", err))
 			g.Logger.Error(err, "failed to extract")
-			close(messages)
 		}
 	}()
 

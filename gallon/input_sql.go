@@ -129,8 +129,6 @@ func (p *InputPluginSql) Extract(
 		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))
 	}
 
-	close(messages)
-
 	return tracedError
 }
 

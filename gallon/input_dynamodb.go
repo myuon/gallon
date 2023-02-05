@@ -86,8 +86,6 @@ func (p *InputPluginDynamoDb) Extract(
 		}
 	}
 
-	close(messages)
-
 	return tracedError
 }
 
