@@ -1,13 +1,15 @@
 package test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"github.com/brianvoe/gofakeit/v6"
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -15,9 +17,89 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+type UserTable struct {
+	ID        string `json:"id" fake:"{uuid}"`
+	Name      string `json:"name" fake:"{firstname}"`
+	Age       int    `json:"age" fake:"{number:1,100}"`
+	CreatedAt int64  `json:"createdAt" fake:"{number:949720320,1896491520}"`
+}
+
+func NewFakeUserTable() (UserTable, error) {
+	v := UserTable{}
+	if err := gofakeit.Struct(&v); err != nil {
+		return v, err
+	}
+
+	return v, nil
+}
+
+func Migrate(db *sql.DB) error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	queryCreateTable, err := conn.QueryContext(ctx, strings.Join([]string{
+		"CREATE TABLE IF NOT EXISTS users (",
+		"id VARCHAR(255) NOT NULL,",
+		"name VARCHAR(255) NOT NULL,",
+		"age INT NOT NULL,",
+		"created_at INT NOT NULL,",
+		"PRIMARY KEY (id)",
+		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+	}, "\n"))
+	if err != nil {
+		return err
+	}
+	queryCreateTable.Close()
+
+	query, err := conn.PrepareContext(ctx, "INSERT INTO users (id, name, age, created_at) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer query.Close()
+
+	for i := 0; i < 1000; i++ {
+		v, err := NewFakeUserTable()
+		if err != nil {
+			return err
+		}
+
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt); err != nil {
+			return err
+		}
+	}
+
+	log.Printf("Migrated %v rows", 1000)
+
+	rows, err := conn.QueryContext(ctx, "SHOW TABLES")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// 結果を出力
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			return err
+		}
+		fmt.Println(table)
+	}
+
+	return nil
+}
+
 var db *sql.DB
 
 func TestMain(m *testing.M) {
+	var exitCode int
+	defer func() {
+		os.Exit(exitCode)
+	}()
+
 	pool, err := dockertest.NewPool("")
 	pool.MaxWait = time.Minute * 2
 	if err != nil {
@@ -29,14 +111,38 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not connect to Docker: %s", err)
 	}
 
-	resource, err := pool.Run(
-		"mysql",
-		"5.7",
-		[]string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=test", "MYSQL_CHARSET=utf8mb4"},
+	resource, err := pool.RunWithOptions(
+		&dockertest.RunOptions{
+			Repository:   "mysql",
+			Tag:          "5.7",
+			Env:          []string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=test", "MYSQL_CHARSET=utf8mb4"},
+			ExposedPorts: []string{"3306/tcp"},
+			PortBindings: map[docker.Port][]docker.PortBinding{
+				"3306/tcp": {{HostIP: "localhost", HostPort: "3306/tcp"}},
+			},
+		},
+		func(config *docker.HostConfig) {
+			config.AutoRemove = true
+			config.RestartPolicy = docker.RestartPolicy{
+				Name: "no",
+			}
+		},
 	)
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
+	if err := resource.Expire(2 * 60); err != nil {
+		log.Fatalf("Could not expire resource: %s", err)
+	}
+
+	defer func() {
+		// When you're done, kill and remove the container
+		if err := pool.Purge(resource); err != nil {
+			log.Fatalf("Could not purge resource: %s", err)
+		}
+
+		log.Println("Purged resource")
+	}()
 
 	if err = pool.Retry(func() error {
 		log.Println("Trying to connect to mysql...")
@@ -50,14 +156,12 @@ func TestMain(m *testing.M) {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+	defer db.Close()
 
 	log.Println("Connected to mysql")
 
 	// Migrate data
-	stdout, err := exec.Command("go1.20", "run", "./data_to_mysql/main.go").Output()
-	log.Println(string(stdout))
-
-	if err != nil {
+	if err := Migrate(db); err != nil {
 		log.Fatalf("Could not migrate data: %s", err)
 	}
 
@@ -65,14 +169,9 @@ func TestMain(m *testing.M) {
 
 	log.Println("Starting tests...")
 
-	exitVal := m.Run()
+	exitCode = m.Run()
 
-	// When you're done, kill and remove the container
-	if err = pool.Purge(resource); err != nil {
-		log.Fatalf("Could not purge resource: %s", err)
-	}
-
-	os.Exit(exitVal)
+	log.Println("Tests finished")
 }
 
 func Test_mysql_to_file(t *testing.T) {

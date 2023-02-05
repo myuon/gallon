@@ -62,6 +62,9 @@ func (p *InputPluginSql) Extract(
 		if err != nil {
 			return err
 		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
 
 		cols, err := rows.Columns()
 		if err != nil {
@@ -168,6 +171,9 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 
 	db, err := sql.Open(dbConfig.Driver, dbConfig.DatabaseUrl)
 	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
 		return nil, err
 	}
 

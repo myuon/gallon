@@ -24,25 +24,7 @@ func NewFakeUserTable() (UserTable, error) {
 	return v, nil
 }
 
-func run() error {
-	conf := mysql.Config{
-		User:                 "root",
-		Passwd:               "root",
-		Net:                  "tcp",
-		Addr:                 "localhost:3306",
-		DBName:               "test",
-		AllowNativePasswords: true,
-	}
-	db, err := sql.Open("mysql", conf.FormatDSN())
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
+func run(db *sql.DB) error {
 	if _, err := db.Query(strings.Join([]string{
 		"CREATE TABLE IF NOT EXISTS users (",
 		"id VARCHAR(255) NOT NULL,",
@@ -66,7 +48,10 @@ func run() error {
 	}()
 
 	for i := 0; i < 1000; i++ {
-		v, _ := NewFakeUserTable()
+		v, err := NewFakeUserTable()
+		if err != nil {
+			return err
+		}
 
 		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt); err != nil {
 			return err
@@ -77,7 +62,25 @@ func run() error {
 }
 
 func main() {
-	if err := run(); err != nil {
+	conf := mysql.Config{
+		User:                 "root",
+		Passwd:               "root",
+		Addr:                 "localhost:3306",
+		DBName:               "test",
+		ParseTime:            true,
+		AllowNativePasswords: true,
+	}
+	db, err := sql.Open("mysql", conf.FormatDSN())
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	if err := run(db); err != nil {
 		panic(err)
 	}
 }
