@@ -74,25 +74,11 @@ func Migrate(db *sql.DB) error {
 
 	log.Printf("Migrated %v rows", 1000)
 
-	rows, err := conn.QueryContext(ctx, "SHOW TABLES")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	// 結果を出力
-	for rows.Next() {
-		var table string
-		if err := rows.Scan(&table); err != nil {
-			return err
-		}
-		fmt.Println(table)
-	}
-
 	return nil
 }
 
 var db *sql.DB
+var port string
 
 func TestMain(m *testing.M) {
 	var exitCode int
@@ -113,13 +99,9 @@ func TestMain(m *testing.M) {
 
 	resource, err := pool.RunWithOptions(
 		&dockertest.RunOptions{
-			Repository:   "mysql",
-			Tag:          "5.7",
-			Env:          []string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=test", "MYSQL_CHARSET=utf8mb4"},
-			ExposedPorts: []string{"3306/tcp"},
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"3306/tcp": {{HostIP: "localhost", HostPort: "3306/tcp"}},
-			},
+			Repository: "mysql",
+			Tag:        "5.7",
+			Env:        []string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=test", "MYSQL_CHARSET=utf8mb4"},
 		},
 		func(config *docker.HostConfig) {
 			config.AutoRemove = true
@@ -128,6 +110,8 @@ func TestMain(m *testing.M) {
 			}
 		},
 	)
+	port = resource.GetPort("3306/tcp")
+
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
@@ -148,7 +132,7 @@ func TestMain(m *testing.M) {
 		log.Println("Trying to connect to mysql...")
 
 		var err error
-		db, err = sql.Open("mysql", fmt.Sprintf("root:root@(localhost:%s)/test?parseTime=true", resource.GetPort("3306/tcp")))
+		db, err = sql.Open("mysql", fmt.Sprintf("root:root@(localhost:%v)/test?parseTime=true", port))
 		if err != nil {
 			return err
 		}
@@ -175,12 +159,12 @@ func TestMain(m *testing.M) {
 }
 
 func Test_mysql_to_file(t *testing.T) {
-	configYml := `
+	configYml := fmt.Sprintf(`
 in:
   type: sql
   driver: mysql
   table: users
-  database_url: root:root@tcp(localhost:3306)/test
+  database_url: root:root@tcp(localhost:%v)/test
   schema:
     id:
       type: string
@@ -194,7 +178,7 @@ out:
   type: file
   filepath: ./output.jsonl
   format: jsonl
-`
+`, port)
 	defer func() {
 		if err := os.Remove("./output.jsonl"); err != nil {
 			t.Errorf("Could not remove output file: %s", err)
