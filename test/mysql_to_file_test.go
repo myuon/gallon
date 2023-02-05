@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,7 +54,10 @@ func TestMain(m *testing.M) {
 	log.Println("Connected to mysql")
 
 	// Migrate data
-	if err := exec.Command("go", "run", "./data_to_mysql/main.go").Run(); err != nil {
+	stdout, err := exec.Command("go1.20", "run", "./data_to_mysql/main.go").Output()
+	log.Println(string(stdout))
+
+	if err != nil {
 		log.Fatalf("Could not migrate data: %s", err)
 	}
 
@@ -92,8 +96,22 @@ out:
   filepath: ./output.jsonl
   format: jsonl
 `
+	defer func() {
+		if err := os.Remove("./output.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
 
 	if err := cmd.RunGallon([]byte(configYml)); err != nil {
-		t.Fatalf("Could not run command: %s", err)
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	if strings.Count(string(jsonl), "\n") != 1000 {
+		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
 	}
 }
