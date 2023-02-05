@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
-	"log"
 	"os"
 )
 
@@ -20,11 +19,11 @@ var RunCmd = &cobra.Command{
 
 		configFileBody, err := os.ReadFile(configFile)
 		if err != nil {
-			log.Fatal(err)
+			zap.S().Error(err)
 		}
 
 		if err := RunGallon(configFileBody); err != nil {
-			log.Fatal(err)
+			zap.S().Error(err)
 		}
 	},
 }
