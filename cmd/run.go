@@ -12,13 +12,19 @@ import (
 )
 
 var RunCmd = &cobra.Command{
-	Use:   "run",
+	Use:   "RunGallon",
 	Short: "Run a migration",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		configFile := args[0]
-		if err := run(configFile); err != nil {
-			log.Println(err)
+
+		configFileBody, err := os.ReadFile(configFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := RunGallon(configFileBody); err != nil {
+			log.Fatal(err)
 		}
 	},
 }
@@ -60,14 +66,9 @@ func getTypeAndYml(config map[string]interface{}) (string, []byte, error) {
 	return t, yml, nil
 }
 
-func run(configFile string) error {
-	configFileBody, err := os.ReadFile(configFile)
-	if err != nil {
-		return err
-	}
-
+func RunGallon(configYml []byte) error {
 	var config GallonConfig
-	if err := yaml.Unmarshal(configFileBody, &config); err != nil {
+	if err := yaml.Unmarshal(configYml, &config); err != nil {
 		return err
 	}
 
