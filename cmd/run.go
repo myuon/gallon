@@ -12,7 +12,7 @@ import (
 )
 
 var RunCmd = &cobra.Command{
-	Use:   "RunGallon",
+	Use:   "run",
 	Short: "Run a migration",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
