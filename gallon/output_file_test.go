@@ -1,8 +1,13 @@
 package gallon
 
 import (
+	"bufio"
+	"bytes"
+	"github.com/docker/docker/pkg/ioutils"
 	"github.com/go-logr/zapr"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"io"
 	"testing"
 )
 
@@ -15,9 +20,17 @@ filepath: ./virtual
 header: true
 `
 
+	buf := new(bytes.Buffer)
+	writer := bufio.NewWriter(buf)
+
 	plugin, err := NewOutputPluginFileFromConfig([]byte(configYml))
 	if err != nil {
 		t.Errorf("Could not create plugin: %s", err)
+	}
+	plugin.newWriter = func() (io.WriteCloser, error) {
+		return ioutils.NewWriteCloserWrapper(writer, func() error {
+			return writer.Flush()
+		}), nil
 	}
 
 	g := Gallon{
@@ -51,4 +64,11 @@ header: true
 	if err := g.Run(); err != nil {
 		t.Errorf("Could not run command: %s", err)
 	}
+
+	expected := `20,1234567890,1,foo
+30,1234567890,2,bar
+40,1234567890,3,baz
+`
+
+	assert.Equal(t, expected, buf.String())
 }

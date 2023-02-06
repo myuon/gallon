@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
+	"io"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -16,17 +18,17 @@ import (
 
 type OutputPluginFile struct {
 	logger      logr.Logger
-	filepath    string
 	deserialize func(interface{}) ([]byte, error)
+	newWriter   func() (io.WriteCloser, error)
 }
 
 func NewOutputPluginFile(
-	filepath string,
 	deserialize func(interface{}) ([]byte, error),
+	newWriter func() (io.WriteCloser, error),
 ) *OutputPluginFile {
 	return &OutputPluginFile{
-		filepath:    filepath,
 		deserialize: deserialize,
+		newWriter:   newWriter,
 	}
 }
 
@@ -37,12 +39,10 @@ func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
 }
 
 func (p *OutputPluginFile) Load(ctx context.Context, messages chan interface{}) error {
-	fs, osErr := os.Create(p.filepath)
-	if osErr != nil {
-		return osErr
+	fs, err := p.newWriter()
+	if err != nil {
+		return err
 	}
-
-	p.logger.Info(fmt.Sprintf("created file: %v", p.filepath))
 
 	defer func() {
 		if err := fs.Close(); err != nil {
@@ -52,7 +52,7 @@ func (p *OutputPluginFile) Load(ctx context.Context, messages chan interface{}) 
 
 	loadedTotal := 0
 
-	var err error
+	var tracedErr error
 
 loop:
 	for {
@@ -69,7 +69,7 @@ loop:
 			for _, msg := range msgSlice {
 				bs, err := p.deserialize(msg)
 				if err != nil {
-					err = errors.Join(err, errors.New("failed to deserialize dynamodb record: "+fmt.Sprintf("%v", msg)))
+					tracedErr = errors.Join(tracedErr, errors.New("failed to deserialize dynamodb record: "+fmt.Sprintf("%v", msg)))
 				}
 
 				if _, err := fs.Write(bs); err != nil {
@@ -82,7 +82,7 @@ loop:
 		}
 	}
 
-	return err
+	return tracedErr
 }
 
 type OutputPluginFileConfig struct {
@@ -91,7 +91,7 @@ type OutputPluginFileConfig struct {
 	Header   *bool  `yaml:"header"`
 }
 
-func NewOutputPluginFileFromConfig(configYml []byte) (OutputPlugin, error) {
+func NewOutputPluginFileFromConfig(configYml []byte) (*OutputPluginFile, error) {
 	config := OutputPluginFileConfig{}
 	if err := yaml.Unmarshal(configYml, &config); err != nil {
 		return nil, err
@@ -103,8 +103,17 @@ func NewOutputPluginFileFromConfig(configYml []byte) (OutputPlugin, error) {
 	}
 
 	return NewOutputPluginFile(
-		config.Filepath,
 		deserializer,
+		func() (io.WriteCloser, error) {
+			fs, err := os.Create(config.Filepath)
+			if err != nil {
+				return nil, err
+			}
+
+			log.Println(fmt.Sprintf("created file: %v", config.Filepath))
+
+			return fs, nil
+		},
 	), nil
 }
 
