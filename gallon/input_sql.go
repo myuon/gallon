@@ -42,11 +42,11 @@ func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 func (p *InputPluginSql) Extract(
 	ctx context.Context,
 	messages chan interface{},
+	errs chan error,
 ) error {
 	hasNext := true
 	page := 0
 
-	var tracedError error
 	extractedTotal := 0
 
 	pagedQueryStatement := ""
@@ -70,7 +70,7 @@ func (p *InputPluginSql) Extract(
 	}
 	defer func() {
 		if err := query.Close(); err != nil {
-			tracedError = errors.Join(tracedError, fmt.Errorf("failed to close sql query: %v (error: %v)", p.tableName, err))
+			errs <- fmt.Errorf("failed to close sql query: %v (error: %v)", p.tableName, err)
 		}
 	}()
 
@@ -102,7 +102,7 @@ loop:
 				}
 
 				if err := rows.Scan(columnPointers...); err != nil {
-					tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err))
+					errs <- fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err)
 					continue
 				}
 
@@ -114,7 +114,7 @@ loop:
 
 				r, err := p.serialize(record)
 				if err != nil {
-					tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.tableName, err))
+					errs <- fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.tableName, err)
 					continue
 				}
 
@@ -137,7 +137,7 @@ loop:
 		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))
 	}
 
-	return tracedError
+	return nil
 }
 
 type InputPluginSqlConfig struct {

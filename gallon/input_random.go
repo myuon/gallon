@@ -40,16 +40,15 @@ func (p *InputPluginRandom) ReplaceLogger(logger logr.Logger) {
 func (p *InputPluginRandom) Extract(
 	ctx context.Context,
 	messages chan interface{},
+	errs chan error,
 ) error {
-	var tracedError error
-
 	for i := 0; i < p.pageLimit; i++ {
 		records := []interface{}{}
 
 		for j := 0; j < p.pageSize; j++ {
 			record, err := p.generate(i)
 			if err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to generate record: %v", err))
+				errs <- fmt.Errorf("failed to generate record: %v", err)
 				continue
 			}
 
@@ -59,7 +58,7 @@ func (p *InputPluginRandom) Extract(
 		messages <- records
 	}
 
-	return tracedError
+	return nil
 }
 
 type InputPluginRandomConfig struct {

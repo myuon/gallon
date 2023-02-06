@@ -2,20 +2,18 @@ package gallon
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"github.com/go-logr/logr"
 	"sync"
 )
 
 type InputPlugin interface {
 	ReplaceLogger(logr.Logger)
-	Extract(ctx context.Context, messages chan interface{}) error
+	Extract(ctx context.Context, messages chan interface{}, errs chan error) error
 }
 
 type OutputPlugin interface {
 	ReplaceLogger(logr.Logger)
-	Load(ctx context.Context, messages chan interface{}) error
+	Load(ctx context.Context, messages chan interface{}, errs chan error) error
 }
 
 type Gallon struct {
@@ -29,10 +27,11 @@ func (g *Gallon) Run() error {
 	g.Output.ReplaceLogger(g.Logger)
 
 	messages := make(chan interface{}, 1000)
-	wg := sync.WaitGroup{}
-	ctx, _ := context.WithCancel(context.Background())
+	errs := make(chan error, 10)
+	tooManyErrorsLimit := 50
 
-	var gallonError error
+	wg := sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
 
 	wg.Add(1)
 	go func() {
@@ -41,8 +40,7 @@ func (g *Gallon) Run() error {
 
 		g.Logger.Info("start extract")
 
-		if err := g.Input.Extract(ctx, messages); err != nil {
-			gallonError = errors.Join(gallonError, fmt.Errorf("failed to extract: %w", err))
+		if err := g.Input.Extract(ctx, messages, errs); err != nil {
 			g.Logger.Error(err, "failed to extract")
 		}
 	}()
@@ -53,13 +51,34 @@ func (g *Gallon) Run() error {
 
 		g.Logger.Info("start load")
 
-		if err := g.Output.Load(ctx, messages); err != nil {
-			gallonError = errors.Join(gallonError, fmt.Errorf("failed to load: %w", err))
+		if err := g.Output.Load(ctx, messages, errs); err != nil {
 			g.Logger.Error(err, "failed to load")
+		}
+	}()
+
+	go func() {
+		errorCount := 0
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-errs:
+				if err != nil {
+					errorCount++
+					g.Logger.Error(err, "error in gallon")
+				}
+
+				if errorCount > tooManyErrorsLimit {
+					g.Logger.Error(err, "too many errs, quit")
+					cancel()
+					return
+				}
+			}
 		}
 	}()
 
 	wg.Wait()
 
-	return gallonError
+	return nil
 }

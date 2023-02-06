@@ -2,7 +2,6 @@ package gallon
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -40,11 +39,11 @@ func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
 func (p *InputPluginDynamoDb) Extract(
 	ctx context.Context,
 	messages chan interface{},
+	errs chan error,
 ) error {
 	hasNext := true
 	lastEvaluatedKey := map[string]types.AttributeValue(nil)
 
-	var tracedError error
 	extractedTotal := 0
 
 loop:
@@ -62,7 +61,7 @@ loop:
 				},
 			)
 			if err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan dynamodb table: %v (error: %v)", p.tableName, err))
+				errs <- fmt.Errorf("failed to scan dynamodb table: %v (error: %v)", p.tableName, err)
 				break
 			}
 
@@ -77,7 +76,7 @@ loop:
 			for _, item := range resp.Items {
 				record, err := p.serialize(item)
 				if err != nil {
-					tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize dynamodb record: %v (error: %w)", item, err))
+					errs <- fmt.Errorf("failed to serialize dynamodb record: %v (error: %w)", item, err)
 					continue
 				}
 
@@ -93,7 +92,7 @@ loop:
 		}
 	}
 
-	return tracedError
+	return nil
 }
 
 type InputPluginDynamoDbConfig struct {

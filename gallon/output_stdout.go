@@ -3,7 +3,6 @@ package gallon
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
@@ -28,10 +27,12 @@ func (p *OutputPluginStdout) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
-func (p *OutputPluginStdout) Load(ctx context.Context, messages chan interface{}) error {
+func (p *OutputPluginStdout) Load(
+	ctx context.Context,
+	messages chan interface{},
+	errs chan error,
+) error {
 	loadedTotal := 0
-
-	var tracedErr error
 
 loop:
 	for {
@@ -48,7 +49,7 @@ loop:
 			for _, msg := range msgSlice {
 				bs, err := p.deserialize(msg)
 				if err != nil {
-					tracedErr = errors.Join(tracedErr, fmt.Errorf("failed to deserialize message: %v (error: %w)", msg, err))
+					errs <- fmt.Errorf("failed to deserialize message: %v (error: %w)", msg, err)
 				}
 
 				p.logger.Info(string(bs))
@@ -61,7 +62,7 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("loaded total: %v", loadedTotal))
 
-	return tracedErr
+	return nil
 }
 
 type OutputPluginStdoutConfig struct {

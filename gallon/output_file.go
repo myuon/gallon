@@ -38,7 +38,11 @@ func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
-func (p *OutputPluginFile) Load(ctx context.Context, messages chan interface{}) error {
+func (p *OutputPluginFile) Load(
+	ctx context.Context,
+	messages chan interface{},
+	errs chan error,
+) error {
 	fs, err := p.newWriter()
 	if err != nil {
 		return err
@@ -51,8 +55,6 @@ func (p *OutputPluginFile) Load(ctx context.Context, messages chan interface{}) 
 	}()
 
 	loadedTotal := 0
-
-	var tracedErr error
 
 loop:
 	for {
@@ -69,7 +71,7 @@ loop:
 			for _, msg := range msgSlice {
 				bs, err := p.deserialize(msg)
 				if err != nil {
-					tracedErr = errors.Join(tracedErr, errors.New("failed to deserialize dynamodb record: "+fmt.Sprintf("%v", msg)))
+					errs <- errors.New("failed to deserialize dynamodb record: " + fmt.Sprintf("%v", msg))
 				}
 
 				if _, err := fs.Write(bs); err != nil {
@@ -82,7 +84,7 @@ loop:
 		}
 	}
 
-	return tracedErr
+	return nil
 }
 
 type OutputPluginFileConfig struct {

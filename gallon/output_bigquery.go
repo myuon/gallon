@@ -48,6 +48,7 @@ func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
 func (p *OutputPluginBigQuery) Load(
 	ctx context.Context,
 	messages chan interface{},
+	errs chan error,
 ) error {
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
 	temporaryTable := p.client.Dataset(p.datasetId).Table(temporaryTableId)
@@ -83,8 +84,6 @@ func (p *OutputPluginBigQuery) Load(
 
 	temporaryFileWriter := csv.NewWriter(temporaryFile)
 
-	var tracedError error
-
 loop:
 	for {
 		select {
@@ -100,7 +99,7 @@ loop:
 			for _, msg := range msgSlice {
 				values, err := p.deserialize(msg)
 				if err != nil {
-					tracedError = errors.Join(tracedError, fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err))
+					errs <- fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err)
 				}
 
 				cells := []string{}
@@ -109,17 +108,13 @@ loop:
 				}
 
 				if err := temporaryFileWriter.Write(cells); err != nil {
-					tracedError = errors.Join(tracedError, fmt.Errorf("failed to write csv record: %v (error: %v)", cells, err))
+					errs <- fmt.Errorf("failed to write csv record: %v (error: %v)", cells, err)
 				}
 			}
 
 			loadedTotal += len(msgSlice)
 			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
 		}
-	}
-
-	if tracedError != nil {
-		return tracedError
 	}
 
 	temporaryFileWriter.Flush()
