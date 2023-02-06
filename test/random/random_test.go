@@ -2,8 +2,15 @@ package random
 
 import (
 	"github.com/myuon/gallon/cmd"
+	"go.uber.org/zap"
 	"testing"
 )
+
+func init() {
+	zapLog := zap.Must(zap.NewDevelopment())
+	defer zapLog.Sync()
+	zap.ReplaceGlobals(zapLog)
+}
 
 func Test_random_to_stdout(t *testing.T) {
 	configYml := `
@@ -22,6 +29,7 @@ out:
   type: stdout
   format: json
 `
+
 	if err := cmd.RunGallon([]byte(configYml)); err != nil {
 		t.Errorf("Could not run command: %s", err)
 	}
