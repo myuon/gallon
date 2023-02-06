@@ -12,18 +12,21 @@ import (
 )
 
 type InputPluginRandom struct {
-	logger   logr.Logger
-	limit    int
-	generate func(int) (interface{}, error)
+	logger    logr.Logger
+	pageSize  int
+	pageLimit int
+	generate  func(int) (interface{}, error)
 }
 
 func NewInputPluginRandom(
-	limit int,
+	pageSize int,
+	pageLimit int,
 	generate func(int) (interface{}, error),
 ) *InputPluginRandom {
 	return &InputPluginRandom{
-		limit:    limit,
-		generate: generate,
+		pageSize:  pageSize,
+		pageLimit: pageLimit,
+		generate:  generate,
 	}
 }
 
@@ -38,22 +41,29 @@ func (p *InputPluginRandom) Extract(
 ) error {
 	var tracedError error
 
-	for i := 0; i < p.limit; i++ {
-		record, err := p.generate(i)
-		if err != nil {
-			tracedError = errors.Join(tracedError, fmt.Errorf("failed to generate record: %v", err))
-			continue
+	for i := 0; i < p.pageLimit; i++ {
+		records := []interface{}{}
+
+		for j := 0; j < p.pageSize; j++ {
+			record, err := p.generate(i)
+			if err != nil {
+				tracedError = errors.Join(tracedError, fmt.Errorf("failed to generate record: %v", err))
+				continue
+			}
+
+			records = append(records, record)
 		}
 
-		messages <- record
+		messages <- records
 	}
 
 	return tracedError
 }
 
 type InputPluginRandomConfig struct {
-	Limit  int                                            `yaml:"limit"`
-	Schema map[string]InputPluginRandomConfigSchemaColumn `yaml:"schema"`
+	PageSize  int                                            `yaml:"pageSize"`
+	PageLimit int                                            `yaml:"pageLimit"`
+	Schema    map[string]InputPluginRandomConfigSchemaColumn `yaml:"schema"`
 }
 
 type InputPluginRandomConfigSchemaColumn struct {
@@ -104,8 +114,16 @@ func NewInputPluginRandomFromConfig(configYml []byte) (*InputPluginRandom, error
 		return nil, err
 	}
 
+	if config.PageSize == 0 {
+		config.PageSize = 10
+	}
+	if config.PageLimit == 0 {
+		config.PageLimit = 10
+	}
+
 	return NewInputPluginRandom(
-		config.Limit,
+		config.PageSize,
+		config.PageLimit,
 		func(index int) (interface{}, error) {
 			record := map[string]interface{}{}
 
