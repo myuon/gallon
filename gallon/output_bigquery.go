@@ -100,6 +100,7 @@ loop:
 				values, err := p.deserialize(msg)
 				if err != nil {
 					errs <- fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err)
+					continue
 				}
 
 				cells := []string{}
@@ -109,6 +110,7 @@ loop:
 
 				if err := temporaryFileWriter.Write(cells); err != nil {
 					errs <- fmt.Errorf("failed to write csv record: %v (error: %v)", cells, err)
+					continue
 				}
 			}
 

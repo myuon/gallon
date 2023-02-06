@@ -27,13 +27,21 @@ func (i InputPluginStub) Extract(
 	messages chan interface{},
 	errs chan error,
 ) error {
-	for _, page := range i.data {
-		records := []interface{}{}
-		for _, record := range page {
-			records = append(records, record)
-		}
+	p := 0
 
-		messages <- records
+	for p < len(i.data) {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			records := []interface{}{}
+			for _, record := range i.data[p] {
+				records = append(records, record)
+			}
+
+			messages <- records
+			p++
+		}
 	}
 
 	return nil

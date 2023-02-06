@@ -50,6 +50,7 @@ loop:
 				bs, err := p.deserialize(msg)
 				if err != nil {
 					errs <- fmt.Errorf("failed to deserialize message: %v (error: %w)", msg, err)
+					continue
 				}
 
 				p.logger.Info(string(bs))

@@ -72,6 +72,7 @@ loop:
 				bs, err := p.deserialize(msg)
 				if err != nil {
 					errs <- errors.New("failed to deserialize dynamodb record: " + fmt.Sprintf("%v", msg))
+					continue
 				}
 
 				if _, err := fs.Write(bs); err != nil {
