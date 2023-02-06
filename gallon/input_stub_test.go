@@ -42,7 +42,7 @@ func (i InputPluginStub) Extract(
 
 			if len(records) > 0 {
 				messages <- records
-				logger.Info(fmt.Sprintf("loaded %v records", len(records)), "page", p)
+				logger.Info(fmt.Sprintf("extracted %v records", len(records)), "page", p)
 			}
 			p++
 		}
