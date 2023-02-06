@@ -1,12 +1,15 @@
 package gallon
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -69,9 +72,6 @@ loop:
 				if _, err := fs.Write(bs); err != nil {
 					return err
 				}
-				if _, err := fs.Write([]byte("\n")); err != nil {
-					return err
-				}
 			}
 
 			loadedTotal += len(msgSlice)
@@ -85,6 +85,7 @@ loop:
 type OutputPluginFileConfig struct {
 	Filepath string `yaml:"filepath"`
 	Format   string `yaml:"format"`
+	Header   *bool  `yaml:"header"`
 }
 
 func NewOutputPluginFileFromConfig(configYml []byte) (OutputPlugin, error) {
@@ -108,7 +109,38 @@ func defineDeserializer(format string) (func(interface{}) ([]byte, error), error
 	switch strings.ToLower(format) {
 	case "jsonl":
 		return func(i interface{}) ([]byte, error) {
-			return json.Marshal(i)
+			j, err := json.Marshal(i)
+			if err != nil {
+				return nil, err
+			}
+
+			return []byte(fmt.Sprintf("%v\n", j)), nil
+		}, nil
+	case "csv":
+		return func(i interface{}) ([]byte, error) {
+			m, ok := i.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("failed to convert to map[string]interface{}: %v", i)
+			}
+
+			keys := []string{}
+			for k := range m {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			cells := []string{}
+			for _, k := range keys {
+				cells = append(cells, fmt.Sprintf("%v", m[k]))
+			}
+
+			buf := new(bytes.Buffer)
+			writer := csv.NewWriter(buf)
+			if err := writer.WriteAll([][]string{cells}); err != nil {
+				return nil, err
+			}
+
+			return buf.Bytes(), nil
 		}, nil
 	default:
 		return nil, errors.New("unknown format: " + format)
