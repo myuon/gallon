@@ -120,6 +120,8 @@ func findOutputPlugin(config GallonConfig) (gallon.OutputPlugin, error) {
 		return gallon.NewOutputPluginBigQueryFromConfig(yml)
 	} else if t == "file" {
 		return gallon.NewOutputPluginFileFromConfig(yml)
+	} else if t == "stdout" {
+		return gallon.NewOutputPluginStdoutFromConfig(yml)
 	}
 
 	return nil, errors.New("plugin not found: " + t)
