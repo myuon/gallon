@@ -66,6 +66,10 @@ header: true
 		t.Errorf("Could not run command: %s", err)
 	}
 
+	if err := writer.Flush(); err != nil {
+		t.Errorf("Could not flush: %s", err)
+	}
+
 	expected := `20,1234567890,1,foo
 30,1234567890,2,bar
 40,1234567890,3,baz
