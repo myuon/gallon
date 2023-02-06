@@ -103,6 +103,8 @@ func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (interface
 		}
 
 		return gofakeit.Date().String(), nil
+	case "unixtime":
+		return gofakeit.Date().Unix(), nil
 	default:
 		return nil, fmt.Errorf("unknown column type: %v", c.Type)
 	}

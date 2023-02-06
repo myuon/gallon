@@ -18,13 +18,15 @@ in:
   type: random
   schema:
     id:
-      type: string
+      type: uuid
     name:
-      type: string
+      type: name
     age:
       type: int
+      min: 0
+      max: 100
     created_at:
-      type: int
+      type: unixtime
 out:
   type: stdout
   format: json
