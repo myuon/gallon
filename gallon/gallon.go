@@ -27,7 +27,6 @@ func (g *Gallon) Run(ctx context.Context) error {
 	g.Output.ReplaceLogger(g.Logger)
 
 	messages := make(chan interface{})
-	defer close(messages)
 
 	errs := make(chan error, 10)
 	tooManyErrorsLimit := 50
@@ -39,7 +38,7 @@ func (g *Gallon) Run(ctx context.Context) error {
 		defer func() {
 			g.Logger.Info("end extract")
 
-			cancel(nil)
+			defer close(messages)
 		}()
 
 		g.Logger.Info("start extract")
