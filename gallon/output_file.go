@@ -80,8 +80,10 @@ loop:
 				}
 			}
 
-			loadedTotal += len(msgSlice)
-			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+			if len(msgSlice) > 0 {
+				loadedTotal += len(msgSlice)
+				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+			}
 		}
 	}
 
@@ -129,7 +131,7 @@ func defineDeserializer(format string) (func(interface{}) ([]byte, error), error
 				return nil, err
 			}
 
-			return []byte(fmt.Sprintf("%v\n", j)), nil
+			return []byte(fmt.Sprintf("%v\n", string(j))), nil
 		}, nil
 	case "csv":
 		return func(i interface{}) ([]byte, error) {

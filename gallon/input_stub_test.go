@@ -2,6 +2,7 @@ package gallon
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-logr/logr"
 )
 
@@ -39,7 +40,10 @@ func (i InputPluginStub) Extract(
 				records = append(records, record)
 			}
 
-			messages <- records
+			if len(records) > 0 {
+				messages <- records
+				logger.Info(fmt.Sprintf("loaded %v records", len(records)), "page", p)
+			}
 			p++
 		}
 	}

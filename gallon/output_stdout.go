@@ -38,6 +38,7 @@ loop:
 	for {
 		select {
 		case <-ctx.Done():
+			println("done in load")
 			break loop
 		case msgs, ok := <-messages:
 			if !ok {
@@ -56,8 +57,10 @@ loop:
 				p.logger.Info(string(bs))
 			}
 
-			loadedTotal += len(msgSlice)
-			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+			if len(msgSlice) > 0 {
+				loadedTotal += len(msgSlice)
+				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+			}
 		}
 	}
 

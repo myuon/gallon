@@ -2,9 +2,8 @@ package gallon
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"github.com/go-logr/logr"
-	"sync"
 )
 
 type InputPlugin interface {
@@ -31,39 +30,44 @@ func (g *Gallon) Run(ctx context.Context) error {
 	errs := make(chan error, 10)
 	tooManyErrorsLimit := 50
 
-	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancelCause(ctx)
+	loaderCtx, doneExtract := context.WithCancel(ctx)
+	defer cancel(nil)
+	defer close(messages)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer close(messages)
+	go func(ctx context.Context) {
+		defer func() {
+			g.Logger.Info("end extract")
+
+			doneExtract()
+		}()
 
 		g.Logger.Info("start extract")
 
 		if err := g.Input.Extract(ctx, messages, errs); err != nil {
 			g.Logger.Error(err, "failed to extract")
 		}
-	}()
+	}(ctx)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	go func(ctx context.Context) {
+		defer func() {
+			g.Logger.Info("end load")
+
+			cancel(nil)
+		}()
 
 		g.Logger.Info("start load")
 
 		if err := g.Output.Load(ctx, messages, errs); err != nil {
 			g.Logger.Error(err, "failed to load")
 		}
-	}()
+	}(loaderCtx)
 
-	go func() {
+	go func(ctx context.Context) {
 		errorCount := 0
 
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case err := <-errs:
 				if err != nil {
 					errorCount++
@@ -71,16 +75,26 @@ func (g *Gallon) Run(ctx context.Context) error {
 				}
 
 				if errorCount > tooManyErrorsLimit {
-					err := fmt.Errorf("too many errors: %d", errorCount)
-					cancel(err)
-					g.Logger.Error(err, "quit")
+					cancel(ErrTooManyErrors)
+					g.Logger.Error(ErrTooManyErrors, "quit", "errorCount", errorCount)
 					return
 				}
 			}
 		}
-	}()
+	}(ctx)
 
-	wg.Wait()
-
-	return nil
+	// stop waiting if extract and load are done, or if there are too many errors
+	for {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
 }
+
+type WaitGroupChan struct {
+	counter int
+	waiter  chan struct{}
+}
+
+var ErrTooManyErrors = errors.New("too many errors")

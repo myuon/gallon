@@ -41,9 +41,7 @@ format: json
 
 	ctx := context.Background()
 
-	if err := g.Run(ctx); err != nil {
+	if err := g.Run(ctx); err != ErrTooManyErrors {
 		t.Errorf("Could not run command: %s", err)
 	}
-
-	t.Errorf("%v", ctx.Err())
 }

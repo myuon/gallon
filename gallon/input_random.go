@@ -55,7 +55,9 @@ func (p *InputPluginRandom) Extract(
 			records = append(records, record)
 		}
 
-		messages <- records
+		if len(records) > 0 {
+			messages <- records
+		}
 	}
 
 	return nil

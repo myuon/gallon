@@ -11,12 +11,19 @@ import (
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"go.uber.org/zap"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func init() {
+	zapLog := zap.Must(zap.NewDevelopment())
+	defer zapLog.Sync()
+	zap.ReplaceGlobals(zapLog)
+}
 
 type UserTable struct {
 	ID        string `json:"id" fake:"{uuid}"`
