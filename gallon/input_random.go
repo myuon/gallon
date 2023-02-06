@@ -1,6 +1,7 @@
 package gallon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/brianvoe/gofakeit/v6"
@@ -37,6 +38,7 @@ func (p *InputPluginRandom) ReplaceLogger(logger logr.Logger) {
 }
 
 func (p *InputPluginRandom) Extract(
+	ctx context.Context,
 	messages chan interface{},
 ) error {
 	var tracedError error

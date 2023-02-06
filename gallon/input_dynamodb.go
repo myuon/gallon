@@ -38,6 +38,7 @@ func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
 }
 
 func (p *InputPluginDynamoDb) Extract(
+	ctx context.Context,
 	messages chan interface{},
 ) error {
 	hasNext := true
@@ -46,43 +47,49 @@ func (p *InputPluginDynamoDb) Extract(
 	var tracedError error
 	extractedTotal := 0
 
+loop:
 	for hasNext {
-		resp, err := p.client.Scan(
-			context.TODO(),
-			&dynamodb.ScanInput{
-				TableName:         aws.String(p.tableName),
-				ExclusiveStartKey: lastEvaluatedKey,
-				Limit:             aws.Int32(100),
-			},
-		)
-		if err != nil {
-			tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan dynamodb table: %v (error: %v)", p.tableName, err))
-			break
-		}
-
-		if resp.LastEvaluatedKey != nil {
-			hasNext = true
-			lastEvaluatedKey = resp.LastEvaluatedKey
-		} else {
-			hasNext = false
-		}
-
-		var msgs []interface{}
-		for _, item := range resp.Items {
-			record, err := p.serialize(item)
+		select {
+		case <-ctx.Done():
+			break loop
+		default:
+			resp, err := p.client.Scan(
+				context.TODO(),
+				&dynamodb.ScanInput{
+					TableName:         aws.String(p.tableName),
+					ExclusiveStartKey: lastEvaluatedKey,
+					Limit:             aws.Int32(100),
+				},
+			)
 			if err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize dynamodb record: %v (error: %w)", item, err))
-				continue
+				tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan dynamodb table: %v (error: %v)", p.tableName, err))
+				break
 			}
 
-			msgs = append(msgs, record)
-		}
+			if resp.LastEvaluatedKey != nil {
+				hasNext = true
+				lastEvaluatedKey = resp.LastEvaluatedKey
+			} else {
+				hasNext = false
+			}
 
-		if len(msgs) > 0 {
-			messages <- msgs
+			var msgs []interface{}
+			for _, item := range resp.Items {
+				record, err := p.serialize(item)
+				if err != nil {
+					tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize dynamodb record: %v (error: %w)", item, err))
+					continue
+				}
 
-			extractedTotal += len(msgs)
-			p.logger.Info(fmt.Sprintf("extracted %d records", extractedTotal))
+				msgs = append(msgs, record)
+			}
+
+			if len(msgs) > 0 {
+				messages <- msgs
+
+				extractedTotal += len(msgs)
+				p.logger.Info(fmt.Sprintf("extracted %d records", extractedTotal))
+			}
 		}
 	}
 

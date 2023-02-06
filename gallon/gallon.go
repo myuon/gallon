@@ -1,6 +1,7 @@
 package gallon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
@@ -9,12 +10,12 @@ import (
 
 type InputPlugin interface {
 	ReplaceLogger(logr.Logger)
-	Extract(messages chan interface{}) error
+	Extract(ctx context.Context, messages chan interface{}) error
 }
 
 type OutputPlugin interface {
 	ReplaceLogger(logr.Logger)
-	Load(messages chan interface{}) error
+	Load(ctx context.Context, messages chan interface{}) error
 }
 
 type Gallon struct {
@@ -29,6 +30,7 @@ func (g *Gallon) Run() error {
 
 	messages := make(chan interface{}, 1000)
 	wg := sync.WaitGroup{}
+	ctx, _ := context.WithCancel(context.Background())
 
 	var gallonError error
 
@@ -39,7 +41,7 @@ func (g *Gallon) Run() error {
 
 		g.Logger.Info("start extract")
 
-		if err := g.Input.Extract(messages); err != nil {
+		if err := g.Input.Extract(ctx, messages); err != nil {
 			gallonError = errors.Join(gallonError, fmt.Errorf("failed to extract: %w", err))
 			g.Logger.Error(err, "failed to extract")
 		}
@@ -51,7 +53,7 @@ func (g *Gallon) Run() error {
 
 		g.Logger.Info("start load")
 
-		if err := g.Output.Load(messages); err != nil {
+		if err := g.Output.Load(ctx, messages); err != nil {
 			gallonError = errors.Join(gallonError, fmt.Errorf("failed to load: %w", err))
 			g.Logger.Error(err, "failed to load")
 		}

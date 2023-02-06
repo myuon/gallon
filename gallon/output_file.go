@@ -2,6 +2,7 @@ package gallon
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -35,7 +36,7 @@ func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
-func (p *OutputPluginFile) Load(messages chan interface{}) error {
+func (p *OutputPluginFile) Load(ctx context.Context, messages chan interface{}) error {
 	fs, osErr := os.Create(p.filepath)
 	if osErr != nil {
 		return osErr
@@ -56,6 +57,8 @@ func (p *OutputPluginFile) Load(messages chan interface{}) error {
 loop:
 	for {
 		select {
+		case <-ctx.Done():
+			break loop
 		case msgs, ok := <-messages:
 			if !ok {
 				break loop

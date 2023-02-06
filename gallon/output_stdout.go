@@ -1,6 +1,7 @@
 package gallon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,7 @@ func (p *OutputPluginStdout) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
-func (p *OutputPluginStdout) Load(messages chan interface{}) error {
+func (p *OutputPluginStdout) Load(ctx context.Context, messages chan interface{}) error {
 	loadedTotal := 0
 
 	var tracedErr error
@@ -35,6 +36,8 @@ func (p *OutputPluginStdout) Load(messages chan interface{}) error {
 loop:
 	for {
 		select {
+		case <-ctx.Done():
+			break loop
 		case msgs, ok := <-messages:
 			if !ok {
 				break loop

@@ -1,6 +1,7 @@
 package gallon
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -39,6 +40,7 @@ func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 }
 
 func (p *InputPluginSql) Extract(
+	ctx context.Context,
 	messages chan interface{},
 ) error {
 	hasNext := true
@@ -72,58 +74,64 @@ func (p *InputPluginSql) Extract(
 		}
 	}()
 
+loop:
 	for hasNext {
-		rows, err := query.Query(page * 100)
-		if err != nil {
-			return err
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-
-		cols, err := rows.Columns()
-		if err != nil {
-			return err
-		}
-
-		msgs := []interface{}{}
-		for rows.Next() {
-			columns := make([]interface{}, len(cols))
-			columnPointers := make([]interface{}, len(cols))
-			for i := range columns {
-				columnPointers[i] = &columns[i]
-			}
-
-			if err := rows.Scan(columnPointers...); err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err))
-				continue
-			}
-
-			record := map[string]interface{}{}
-			for i, colName := range cols {
-				val := columnPointers[i].(*interface{})
-				record[colName] = *val
-			}
-
-			r, err := p.serialize(record)
+		select {
+		case <-ctx.Done():
+			break loop
+		default:
+			rows, err := query.Query(page * 100)
 			if err != nil {
-				tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.tableName, err))
-				continue
+				return err
+			}
+			if err := rows.Err(); err != nil {
+				return err
 			}
 
-			msgs = append(msgs, r)
+			cols, err := rows.Columns()
+			if err != nil {
+				return err
+			}
+
+			msgs := []interface{}{}
+			for rows.Next() {
+				columns := make([]interface{}, len(cols))
+				columnPointers := make([]interface{}, len(cols))
+				for i := range columns {
+					columnPointers[i] = &columns[i]
+				}
+
+				if err := rows.Scan(columnPointers...); err != nil {
+					tracedError = errors.Join(tracedError, fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err))
+					continue
+				}
+
+				record := map[string]interface{}{}
+				for i, colName := range cols {
+					val := columnPointers[i].(*interface{})
+					record[colName] = *val
+				}
+
+				r, err := p.serialize(record)
+				if err != nil {
+					tracedError = errors.Join(tracedError, fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.tableName, err))
+					continue
+				}
+
+				msgs = append(msgs, r)
+			}
+
+			if len(msgs) > 0 {
+				messages <- msgs
+				extractedTotal += len(msgs)
+
+				p.logger.Info(fmt.Sprintf("extracted %v records", extractedTotal))
+			} else {
+				hasNext = false
+			}
+
+			page++
 		}
-
-		if len(msgs) > 0 {
-			messages <- msgs
-			extractedTotal += len(msgs)
-
-			p.logger.Info(fmt.Sprintf("extracted %v records", extractedTotal))
-		} else {
-			hasNext = false
-		}
-
-		page++
 	}
 	if extractedTotal == 0 {
 		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))

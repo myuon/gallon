@@ -46,10 +46,9 @@ func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
 }
 
 func (p *OutputPluginBigQuery) Load(
+	ctx context.Context,
 	messages chan interface{},
 ) error {
-	ctx := context.Background()
-
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
 	temporaryTable := p.client.Dataset(p.datasetId).Table(temporaryTableId)
 	if err := temporaryTable.Create(ctx, &bigquery.TableMetadata{
@@ -89,6 +88,8 @@ func (p *OutputPluginBigQuery) Load(
 loop:
 	for {
 		select {
+		case <-ctx.Done():
+			break loop
 		case msgs, ok := <-messages:
 			if !ok {
 				break loop
