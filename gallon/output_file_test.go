@@ -3,6 +3,7 @@ package gallon
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/go-logr/zapr"
 	"github.com/stretchr/testify/assert"
@@ -61,7 +62,7 @@ header: true
 		}),
 		Output: plugin,
 	}
-	if err := g.Run(); err != nil {
+	if err := g.Run(context.Background()); err != nil {
 		t.Errorf("Could not run command: %s", err)
 	}
 

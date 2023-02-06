@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"github.com/go-logr/zapr"
 	"github.com/myuon/gallon/gallon"
@@ -86,7 +87,7 @@ func RunGallon(configYml []byte) error {
 		Input:  input,
 		Output: output,
 	}
-	if err := g.Run(); err != nil {
+	if err := g.Run(context.Background()); err != nil {
 		return err
 	}
 

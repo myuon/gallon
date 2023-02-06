@@ -69,7 +69,7 @@ type OutputPluginStdoutConfig struct {
 	Format string `yaml:"format"`
 }
 
-func NewOutputPluginStdoutFromConfig(configYml []byte) (OutputPlugin, error) {
+func NewOutputPluginStdoutFromConfig(configYml []byte) (*OutputPluginStdout, error) {
 	var config OutputPluginStdoutConfig
 
 	if err := yaml.Unmarshal(configYml, &config); err != nil {

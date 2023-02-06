@@ -2,6 +2,7 @@ package gallon
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-logr/logr"
 	"sync"
 )
@@ -22,7 +23,7 @@ type Gallon struct {
 	Output OutputPlugin
 }
 
-func (g *Gallon) Run() error {
+func (g *Gallon) Run(ctx context.Context) error {
 	g.Input.ReplaceLogger(g.Logger)
 	g.Output.ReplaceLogger(g.Logger)
 
@@ -31,7 +32,7 @@ func (g *Gallon) Run() error {
 	tooManyErrorsLimit := 50
 
 	wg := sync.WaitGroup{}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(ctx)
 
 	wg.Add(1)
 	go func() {
@@ -66,12 +67,13 @@ func (g *Gallon) Run() error {
 			case err := <-errs:
 				if err != nil {
 					errorCount++
-					g.Logger.Error(err, "error in gallon")
+					g.Logger.Error(err, "error in gallon", "errorCount", errorCount)
 				}
 
 				if errorCount > tooManyErrorsLimit {
-					g.Logger.Error(err, "too many errs, quit")
-					cancel()
+					err := fmt.Errorf("too many errors: %d", errorCount)
+					cancel(err)
+					g.Logger.Error(err, "quit")
 					return
 				}
 			}
