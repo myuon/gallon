@@ -9,6 +9,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"gopkg.in/yaml.v3"
+	"time"
 )
 
 type InputPluginSql struct {
@@ -184,6 +185,13 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface
 		v, ok := value.(bool)
 		if !ok {
 			return nil, fmt.Errorf("value is not bool: %v", value)
+		}
+
+		return v, nil
+	case "time":
+		v, ok := value.(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("value is not time: %v", value)
 		}
 
 		return v, nil

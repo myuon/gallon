@@ -8,6 +8,7 @@ import (
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"go.uber.org/zap"
 	"log"
 	"os"
 	"strings"
@@ -17,11 +18,18 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+func init() {
+	zapLog := zap.Must(zap.NewDevelopment())
+	defer zapLog.Sync()
+	zap.ReplaceGlobals(zapLog)
+}
+
 type UserTable struct {
-	ID        string `json:"id" fake:"{uuid}"`
-	Name      string `json:"name" fake:"{firstname}"`
-	Age       int    `json:"age" fake:"{number:1,100}"`
-	CreatedAt int64  `json:"createdAt" fake:"{number:949720320,1896491520}"`
+	ID        string    `json:"id" fake:"{uuid}"`
+	Name      string    `json:"name" fake:"{firstname}"`
+	Age       int       `json:"age" fake:"{number:1,100}"`
+	CreatedAt int64     `json:"createdAt" fake:"{number:949720320,1896491520}"`
+	Birthday  time.Time `json:"birthday"`
 }
 
 func NewFakeUserTable() (UserTable, error) {
@@ -47,6 +55,7 @@ func Migrate(db *sql.DB) error {
 		"name VARCHAR(255) NOT NULL,",
 		"age INT NOT NULL,",
 		"created_at INT NOT NULL,",
+		"birthday DATETIME NOT NULL,",
 		"PRIMARY KEY (id)",
 		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 	}, "\n"))
@@ -55,7 +64,7 @@ func Migrate(db *sql.DB) error {
 	}
 	queryCreateTable.Close()
 
-	query, err := conn.PrepareContext(ctx, "INSERT INTO users (id, name, age, created_at) VALUES (?, ?, ?, ?)")
+	query, err := conn.PrepareContext(ctx, "INSERT INTO users (id, name, age, created_at, birthday) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -67,7 +76,7 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 
-		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday); err != nil {
 			return err
 		}
 	}
@@ -78,7 +87,7 @@ func Migrate(db *sql.DB) error {
 }
 
 var db *sql.DB
-var port string
+var databaseUrl string
 
 func TestMain(m *testing.M) {
 	var exitCode int
@@ -110,7 +119,7 @@ func TestMain(m *testing.M) {
 			}
 		},
 	)
-	port = resource.GetPort("3306/tcp")
+	port := resource.GetPort("3306/tcp")
 
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
@@ -127,12 +136,13 @@ func TestMain(m *testing.M) {
 
 		log.Println("Purged resource")
 	}()
+	databaseUrl = fmt.Sprintf("root:root@tcp(localhost:%v)/test?parseTime=true&loc=Asia%%2FTokyo", port)
 
 	if err = pool.Retry(func() error {
 		log.Println("Trying to connect to database...")
 
 		var err error
-		db, err = sql.Open("mysql", fmt.Sprintf("root:root@(localhost:%v)/test?parseTime=true", port))
+		db, err = sql.Open("mysql", databaseUrl)
 		if err != nil {
 			return err
 		}
@@ -164,7 +174,7 @@ in:
   type: sql
   driver: mysql
   table: users
-  database_url: root:root@tcp(localhost:%v)/test
+  database_url: %v
   schema:
     id:
       type: string
@@ -174,11 +184,13 @@ in:
       type: int
     created_at:
       type: int
+    birthday:
+      type: time
 out:
   type: file
   filepath: ./output.jsonl
   format: jsonl
-`, port)
+`, databaseUrl)
 	defer func() {
 		if err := os.Remove("./output.jsonl"); err != nil {
 			t.Errorf("Could not remove output file: %s", err)
@@ -193,6 +205,7 @@ out:
 	if err != nil {
 		t.Errorf("Could not read output file: %s", err)
 	}
+	fmt.Printf("%v\n", strings.Join(strings.Split(string(jsonl), "\n")[0:10], "\n"))
 
 	if strings.Count(string(jsonl), "\n") != 1000 {
 		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
