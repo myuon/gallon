@@ -182,12 +182,16 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface
 
 		return v, nil
 	case "bool":
-		v, ok := value.(bool)
+		v, ok := value.(int64)
 		if !ok {
 			return nil, fmt.Errorf("value is not bool: %v", value)
 		}
 
-		return v, nil
+		if v == 0 {
+			return false, nil
+		} else {
+			return true, nil
+		}
 	case "time":
 		v, ok := value.(time.Time)
 		if !ok {

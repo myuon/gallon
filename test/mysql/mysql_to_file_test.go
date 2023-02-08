@@ -25,11 +25,12 @@ func init() {
 }
 
 type UserTable struct {
-	ID        string    `json:"id" fake:"{uuid}"`
-	Name      string    `json:"name" fake:"{firstname}"`
-	Age       int       `json:"age" fake:"{number:1,100}"`
-	CreatedAt int64     `json:"createdAt" fake:"{number:949720320,1896491520}"`
-	Birthday  time.Time `json:"birthday"`
+	ID         string    `json:"id" fake:"{uuid}"`
+	Name       string    `json:"name" fake:"{firstname}"`
+	Age        int       `json:"age" fake:"{number:1,100}"`
+	CreatedAt  int64     `json:"createdAt" fake:"{number:949720320,1896491520}"`
+	Birthday   time.Time `json:"birthday"`
+	HasPartner *bool     `json:"hasPartner"`
 }
 
 func NewFakeUserTable() (UserTable, error) {
@@ -56,6 +57,7 @@ func Migrate(db *sql.DB) error {
 		"age INT NOT NULL,",
 		"created_at INT NOT NULL,",
 		"birthday DATETIME NOT NULL,",
+		"has_partner BOOLEAN,",
 		"PRIMARY KEY (id)",
 		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 	}, "\n"))
@@ -64,7 +66,10 @@ func Migrate(db *sql.DB) error {
 	}
 	queryCreateTable.Close()
 
-	query, err := conn.PrepareContext(ctx, "INSERT INTO users (id, name, age, created_at, birthday) VALUES (?, ?, ?, ?, ?)")
+	query, err := conn.PrepareContext(
+		ctx,
+		"INSERT INTO users (id, name, age, created_at, birthday, has_partner) VALUES (?, ?, ?, ?, ?, ?)",
+	)
 	if err != nil {
 		return err
 	}
@@ -76,7 +81,7 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 
-		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner); err != nil {
 			return err
 		}
 	}
@@ -186,6 +191,8 @@ in:
       type: int
     birthday:
       type: time
+    has_partner:
+      type: bool
 out:
   type: file
   filepath: ./output.jsonl
