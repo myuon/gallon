@@ -1,3 +1,4 @@
+// cmd package defines the commands for gallon cli.
 package cmd
 
 import (
@@ -11,6 +12,7 @@ import (
 	"os"
 )
 
+// RunCmd defines `gallon run` command.
 var RunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run a migration",
@@ -29,6 +31,8 @@ var RunCmd = &cobra.Command{
 	},
 }
 
+// GallonConfig is the schema of gallon config yaml.
+// Both `in` and `out` must contain `type` field. Plugins for input/output will be chosen by `type` field
 type GallonConfig struct {
 	In  map[string]interface{} `yaml:"in"`
 	Out map[string]interface{} `yaml:"out"`
@@ -66,6 +70,7 @@ func getTypeAndYml(config map[string]interface{}) (string, []byte, error) {
 	return t, yml, nil
 }
 
+// RunGallon runs a migration with the given config yaml. See GallonConfig for the schema of the file.
 func RunGallon(configYml []byte) error {
 	var config GallonConfig
 	if err := yaml.Unmarshal(configYml, &config); err != nil {

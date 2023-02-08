@@ -1,3 +1,7 @@
+// This is the main package for gallon cli.
+//
+// If you want to use gallon as a library, please see gallon package.
+// If you want to see how to use gallon cli, please see README.md.
 package main
 
 import (

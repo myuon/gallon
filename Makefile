@@ -9,3 +9,6 @@ migrate-mysql:
 
 run:
 	go1.20 run main.go run $(file)
+
+doc:
+	reflex -s -- sh -c 'pkgsite -http=:9090'

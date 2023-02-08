@@ -16,12 +16,17 @@ type OutputPlugin interface {
 	Load(ctx context.Context, messages chan interface{}, errs chan error) error
 }
 
+// Gallon is a struct that runs a migration.
 type Gallon struct {
+	// Logger will be used for logging. For gallon-cli, zap logger (and the `logr.Logger` interface of it) is used.
 	Logger logr.Logger
 	Input  InputPlugin
 	Output OutputPlugin
 }
 
+// Run starts goroutines for extract and load, and waits for them to finish.
+//
+// If too many errors are occurred, it will cancel the context and return ErrTooManyErrors.
 func (g *Gallon) Run(ctx context.Context) error {
 	g.Input.ReplaceLogger(g.Logger)
 	g.Output.ReplaceLogger(g.Logger)
