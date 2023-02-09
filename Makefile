@@ -11,4 +11,4 @@ run:
 	go1.20 run main.go run $(file)
 
 doc:
-	reflex -s -- sh -c 'pkgsite -http=:9090'
+	open http://localhost:9090/github.com/myuon/gallon && reflex -s -- sh -c 'pkgsite -http=:9090'

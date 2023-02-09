@@ -1,3 +1,9 @@
+// This package is a core library of gallon.
+// It provides the interface of InputPlugin and OutputPlugin, and the struct of Gallon.
+//
+// The package also contains input and output plugins:
+//   - input: DynamoDB, MySQL, PostgreSQL and gofakeit generator (See InputPluginRandom)
+//   - output: BigQuery, Stdout, File (JSONL, CSV)
 package gallon
 
 import (
@@ -7,12 +13,20 @@ import (
 )
 
 type InputPlugin interface {
+	// ReplaceLogger replaces the logger of the plugin.
+	// It is called in Gallon.Run() at the beginning.
 	ReplaceLogger(logr.Logger)
+	// Extract extracts data from the source and sends it to the messages channel.
+	// If an error occurs, send it to the errs channel.
 	Extract(ctx context.Context, messages chan interface{}, errs chan error) error
 }
 
 type OutputPlugin interface {
+	// ReplaceLogger replaces the logger of the plugin.
+	// It is called in Gallon.Run() at the beginning.
 	ReplaceLogger(logr.Logger)
+	// Load loads data from the messages channel and sends it to the destination.
+	// If an error occurs, send it to the errs channel.
 	Load(ctx context.Context, messages chan interface{}, errs chan error) error
 }
 
@@ -97,11 +111,6 @@ func (g *Gallon) Run(ctx context.Context) error {
 			return nil
 		}
 	}
-}
-
-type WaitGroupChan struct {
-	counter int
-	waiter  chan struct{}
 }
 
 var ErrTooManyErrors = errors.New("too many errors")
