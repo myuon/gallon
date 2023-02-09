@@ -40,3 +40,9 @@ func main() {
 		zap.S().Error(err)
 	}
 }
+
+// These variables are set in build step
+var (
+	Version  = "unset"
+	Revision = "unset"
+)
