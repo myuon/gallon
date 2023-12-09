@@ -1,7 +1,6 @@
 package gallon
 
 import (
-	"bytes"
 	"cloud.google.com/go/bigquery"
 	"context"
 	"errors"
@@ -11,15 +10,17 @@ import (
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
 	"strings"
+	"time"
 )
 
 type OutputPluginBigQuery struct {
-	logger      logr.Logger
-	client      *bigquery.Client
-	datasetId   string
-	tableId     string
-	schema      bigquery.Schema
-	deserialize func(interface{}) ([]bigquery.Value, error)
+	logger               logr.Logger
+	client               *bigquery.Client
+	datasetId            string
+	tableId              string
+	schema               bigquery.Schema
+	deserialize          func(interface{}) ([]bigquery.Value, error)
+	deleteTemporaryTable bool
 }
 
 func NewOutputPluginBigQuery(
@@ -28,13 +29,15 @@ func NewOutputPluginBigQuery(
 	tableId string,
 	schema bigquery.Schema,
 	deserialize func(interface{}) ([]bigquery.Value, error),
+	deleteTemporaryTable bool,
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
-		client:      client,
-		datasetId:   datasetId,
-		tableId:     tableId,
-		schema:      schema,
-		deserialize: deserialize,
+		client:               client,
+		datasetId:            datasetId,
+		tableId:              tableId,
+		schema:               schema,
+		deserialize:          deserialize,
+		deleteTemporaryTable: deleteTemporaryTable,
 	}
 }
 
@@ -52,6 +55,24 @@ func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, tableId string) error {
+	timeout := time.After(300 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout while waiting for table %v to be created", p.tableId)
+		case <-ticker.C:
+			if meta, err := p.client.Dataset(p.datasetId).Table(tableId).Metadata(ctx); err != nil {
+				p.logger.Info(fmt.Sprintf("waiting for table %v to be created, %v", p.tableId, meta))
+				continue
+			}
+
+			return nil
+		}
+	}
+}
+
 func (p *OutputPluginBigQuery) Load(
 	ctx context.Context,
 	messages chan interface{},
@@ -64,16 +85,24 @@ func (p *OutputPluginBigQuery) Load(
 	}); err != nil {
 		return err
 	}
+
 	defer func() {
-		if err := temporaryTable.Delete(ctx); err != nil {
-			p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
-		} else {
-			p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
+		if p.deleteTemporaryTable {
+			if err := temporaryTable.Delete(ctx); err != nil {
+				p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
+			} else {
+				p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
+			}
 		}
 	}()
 
+	if err := p.waitUntilTableCreation(ctx, temporaryTableId); err != nil {
+		return err
+	}
+
+	p.logger.Info(fmt.Sprintf("created temporary table %v", temporaryTable.TableID))
+
 	loadedTotal := 0
-	buffer := new(bytes.Buffer)
 	temporaryTableInserter := temporaryTable.Inserter()
 
 	saveRecords := func(msgSlice []interface{}) {
@@ -120,12 +149,17 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	source := bigquery.NewReaderSource(buffer)
+	ctx = context.Background()
+	meta, err := temporaryTable.Metadata(ctx)
+	if err != nil {
+		return err
+	}
+	p.logger.Info(fmt.Sprintf("temporary table metadata: %+v", meta.StreamingBuffer.EstimatedBytes))
 
-	loader := temporaryTable.LoaderFrom(source)
-	loader.WriteDisposition = bigquery.WriteTruncate
+	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+	copier.WriteDisposition = bigquery.WriteTruncate
 
-	job, err := loader.Run(ctx)
+	job, err := copier.Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -136,23 +170,8 @@ loop:
 	if err := status.Err(); err != nil {
 		return err
 	}
-
-	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
-
-	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
-
-	copier.WriteDisposition = bigquery.WriteTruncate
-
-	job, err = copier.Run(ctx)
-	if err != nil {
-		return err
-	}
-	status, err = job.Wait(ctx)
-	if err != nil {
-		return err
-	}
-	if err := status.Err(); err != nil {
-		return err
+	if !status.Done() {
+		return fmt.Errorf("copier job is not done: %v", status)
 	}
 
 	p.logger.Info(fmt.Sprintf("copied from %v to %v", temporaryTable.TableID, p.tableId))
@@ -161,11 +180,12 @@ loop:
 }
 
 type OutputPluginBigQueryConfig struct {
-	ProjectId string                                            `yaml:"projectId"`
-	DatasetId string                                            `yaml:"datasetId"`
-	TableId   string                                            `yaml:"tableId"`
-	Endpoint  *string                                           `yaml:"endpoint"`
-	Schema    map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
+	ProjectId            string                                            `yaml:"projectId"`
+	DatasetId            string                                            `yaml:"datasetId"`
+	TableId              string                                            `yaml:"tableId"`
+	Endpoint             *string                                           `yaml:"endpoint"`
+	Schema               map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
+	DeleteTemporaryTable *bool                                             `yaml:"deleteTemporaryTable"`
 }
 
 type OutputPluginBigQueryConfigSchemaColumn struct {
@@ -202,6 +222,11 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		})
 	}
 
+	deleteTemporaryTable := true
+	if config.DeleteTemporaryTable != nil {
+		deleteTemporaryTable = *config.DeleteTemporaryTable
+	}
+
 	return NewOutputPluginBigQuery(
 		client,
 		config.DatasetId,
@@ -215,6 +240,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 
 			return values, nil
 		},
+		deleteTemporaryTable,
 	), nil
 }
 
