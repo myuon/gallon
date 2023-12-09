@@ -1,5 +1,7 @@
 in:
   type: random
+  pageLimit: 50
+  pageSize: 100
   schema:
     id:
       type: uuid
@@ -20,7 +22,7 @@ out:
   location: asia-northeast1
   projectId: default-364617
   datasetId: test
-  tableId: users_test_random
+  tableId: users
   schema:
     id:
       type: string

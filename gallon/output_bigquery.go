@@ -149,12 +149,27 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	ctx = context.Background()
-	meta, err := temporaryTable.Metadata(ctx)
-	if err != nil {
-		return err
+	ticker := time.NewTicker(10 * time.Second)
+	timeout := time.After(90 * time.Minute)
+
+waitForLoad:
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout while waiting for load job to be done")
+		case <-ticker.C:
+			ctx = context.Background()
+			meta, err := temporaryTable.Metadata(ctx)
+			if err != nil {
+				return err
+			}
+			if meta.StreamingBuffer.EstimatedRows == 0 {
+				break waitForLoad
+			}
+
+			p.logger.Info(fmt.Sprintf("waiting for load job to be done (%v rows left)", meta.StreamingBuffer.EstimatedRows))
+		}
 	}
-	p.logger.Info(fmt.Sprintf("temporary table metadata: %+v", meta.StreamingBuffer.EstimatedBytes))
 
 	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
 	copier.WriteDisposition = bigquery.WriteTruncate
