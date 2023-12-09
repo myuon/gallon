@@ -2,12 +2,21 @@ package gallon
 
 import (
 	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/bigquery/storage/apiv1/storagepb"
+	"cloud.google.com/go/bigquery/storage/managedwriter"
+	"cloud.google.com/go/bigquery/storage/managedwriter/adapt"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/dynamicpb"
 	"gopkg.in/yaml.v3"
 	"strings"
 	"time"
@@ -78,6 +87,8 @@ func (p *OutputPluginBigQuery) Load(
 	messages chan interface{},
 	errs chan error,
 ) error {
+	projectId := p.client.Project()
+
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
 	temporaryTable := p.client.Dataset(p.datasetId).Table(temporaryTableId)
 	if err := temporaryTable.Create(ctx, &bigquery.TableMetadata{
@@ -103,9 +114,48 @@ func (p *OutputPluginBigQuery) Load(
 	p.logger.Info(fmt.Sprintf("created temporary table %v", temporaryTable.TableID))
 
 	loadedTotal := 0
-	temporaryTableInserter := temporaryTable.Inserter()
+
+	mwriter, err := managedwriter.NewClient(ctx, projectId)
+	if err != nil {
+		return err
+	}
+	defer mwriter.Close()
+
+	pendingStream, err := mwriter.CreateWriteStream(ctx, &storagepb.CreateWriteStreamRequest{
+		Parent: fmt.Sprintf("projects/%s/datasets/%s/tables/%s", projectId, p.datasetId, temporaryTableId),
+		WriteStream: &storagepb.WriteStream{
+			Type: storagepb.WriteStream_PENDING,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	tableSchema, err := adapt.BQSchemaToStorageTableSchema(p.schema)
+	if err != nil {
+		return err
+	}
+	descriptor, err := adapt.StorageSchemaToProto2Descriptor(tableSchema, "gallon")
+	if err != nil {
+		return err
+	}
+	messageDescriptor, ok := descriptor.(protoreflect.MessageDescriptor)
+	if !ok {
+		return fmt.Errorf("failed to convert to message descriptor")
+	}
+
+	managedStream, err := mwriter.NewManagedStream(
+		ctx,
+		managedwriter.WithStreamName(pendingStream.GetName()),
+		managedwriter.WithSchemaDescriptor(protodesc.ToDescriptorProto(messageDescriptor)),
+	)
+	if err != nil {
+		return err
+	}
+	defer managedStream.Close()
 
 	saveRecords := func(msgSlice []interface{}) {
+		rows := [][]byte{}
 		for _, msg := range msgSlice {
 			values, err := p.deserialize(msg)
 			if err != nil {
@@ -113,15 +163,36 @@ func (p *OutputPluginBigQuery) Load(
 				continue
 			}
 
-			bqRecords := bqRecordWrapper{}
+			mp := map[string]interface{}{}
 			for i, v := range values {
-				bqRecords[p.schema[i].Name] = v
+				mp[p.schema[i].Name] = v
 			}
 
-			if err := temporaryTableInserter.Put(ctx, bqRecords); err != nil {
-				errs <- fmt.Errorf("failed to insert into temporary table: %v (error: %v)", values, err)
+			j, err := json.Marshal(&mp)
+			if err != nil {
+				errs <- fmt.Errorf("failed to marshal: %v (error: %v)", mp, err)
 				continue
 			}
+
+			message := dynamicpb.NewMessage(messageDescriptor)
+
+			if err := protojson.Unmarshal(j, message); err != nil {
+				errs <- fmt.Errorf("failed to unmarshal: %v (error: %v)", mp, err)
+				continue
+			}
+
+			bs, err := proto.Marshal(message)
+			if err != nil {
+				errs <- fmt.Errorf("failed to marshal: %v (error: %v)", mp, err)
+				continue
+			}
+
+			rows = append(rows, bs)
+		}
+
+		if _, err := managedStream.AppendRows(ctx, rows); err != nil {
+			errs <- fmt.Errorf("failed to append rows: %v (error: %v)", rows, err)
+			return
 		}
 
 		if len(msgSlice) > 0 {
@@ -149,27 +220,50 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	ticker := time.NewTicker(10 * time.Second)
-	timeout := time.After(90 * time.Minute)
-
-waitForLoad:
-	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("timeout while waiting for load job to be done")
-		case <-ticker.C:
-			ctx = context.Background()
-			meta, err := temporaryTable.Metadata(ctx)
-			if err != nil {
-				return err
-			}
-			if meta.StreamingBuffer.EstimatedRows == 0 {
-				break waitForLoad
-			}
-
-			p.logger.Info(fmt.Sprintf("waiting for load job to be done (%v rows left)", meta.StreamingBuffer.EstimatedRows))
-		}
+	rowCount, err := managedStream.Finalize(ctx)
+	if err != nil {
+		return err
 	}
+
+	p.logger.Info(fmt.Sprintf("%v: finalized %v rows", managedStream.StreamName(), rowCount))
+
+	resp, err := mwriter.BatchCommitWriteStreams(ctx, &storagepb.BatchCommitWriteStreamsRequest{
+		Parent:       managedwriter.TableParentFromStreamName(managedStream.StreamName()),
+		WriteStreams: []string{managedStream.StreamName()},
+	})
+	if err != nil {
+		return err
+	}
+	if len(resp.GetStreamErrors()) > 0 {
+		return fmt.Errorf("failed to commit stream: %v", resp.GetStreamErrors())
+	}
+
+	p.logger.Info(fmt.Sprintf("Table data committed at %v", resp.GetCommitTime().AsTime().Format(time.RFC3339Nano)))
+
+	/*
+			ticker := time.NewTicker(10 * time.Second)
+			timeout := time.After(90 * time.Minute)
+
+		waitForLoad:
+			for {
+				select {
+				case <-timeout:
+					return fmt.Errorf("timeout while waiting for load job to be done")
+				case <-ticker.C:
+					ctx = context.Background()
+					meta, err := temporaryTable.Metadata(ctx)
+					if err != nil {
+						return err
+					}
+					if meta.StreamingBuffer.EstimatedRows == 0 {
+						break waitForLoad
+					}
+
+					p.logger.Info(fmt.Sprintf("waiting for load job to be done (%v rows left)", meta.StreamingBuffer.EstimatedRows))
+				}
+			}
+
+	*/
 
 	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
 	copier.WriteDisposition = bigquery.WriteTruncate

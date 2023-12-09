@@ -36,3 +36,4 @@ out:
       type: string
     created_at:
       type: integer
+#  deleteTemporaryTable: false
