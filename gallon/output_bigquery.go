@@ -240,35 +240,11 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("Table data committed at %v", resp.GetCommitTime().AsTime().Format(time.RFC3339Nano)))
 
-	/*
-			ticker := time.NewTicker(10 * time.Second)
-			timeout := time.After(90 * time.Minute)
+	query := p.client.Query(fmt.Sprintf("SELECT * FROM `%v.%v` LIMIT %v", p.datasetId, temporaryTableId, rowCount))
+	query.WriteDisposition = bigquery.WriteTruncate
+	query.Dst = p.client.Dataset(p.datasetId).Table(p.tableId)
 
-		waitForLoad:
-			for {
-				select {
-				case <-timeout:
-					return fmt.Errorf("timeout while waiting for load job to be done")
-				case <-ticker.C:
-					ctx = context.Background()
-					meta, err := temporaryTable.Metadata(ctx)
-					if err != nil {
-						return err
-					}
-					if meta.StreamingBuffer.EstimatedRows == 0 {
-						break waitForLoad
-					}
-
-					p.logger.Info(fmt.Sprintf("waiting for load job to be done (%v rows left)", meta.StreamingBuffer.EstimatedRows))
-				}
-			}
-
-	*/
-
-	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
-	copier.WriteDisposition = bigquery.WriteTruncate
-
-	job, err := copier.Run(ctx)
+	job, err := query.Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -282,6 +258,12 @@ loop:
 	if !status.Done() {
 		return fmt.Errorf("copier job is not done: %v", status)
 	}
+
+	/* NOTE: CopierFrom is not working...?
+
+	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+	copier.WriteDisposition = bigquery.WriteTruncate
+	*/
 
 	p.logger.Info(fmt.Sprintf("copied from %v to %v", temporaryTable.TableID, p.tableId))
 

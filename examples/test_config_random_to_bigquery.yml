@@ -1,7 +1,7 @@
 in:
   type: random
-  pageLimit: 50
-  pageSize: 100
+  pageLimit: 10
+  pageSize: 50
   schema:
     id:
       type: uuid
