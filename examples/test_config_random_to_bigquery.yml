@@ -1,0 +1,36 @@
+in:
+  type: random
+  schema:
+    id:
+      type: uuid
+    name:
+      type: string
+    email:
+      type: email
+    age:
+      type: int
+      min: 10
+      max: 100
+    born_at:
+      type: time
+    created_at:
+      type: unixtime
+out:
+  type: bigquery
+  location: asia-northeast1
+  projectId: default-364617
+  datasetId: test
+  tableId: users_test_random
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    email:
+      type: string
+    age:
+      type: integer
+    born_at:
+      type: string
+    created_at:
+      type: integer

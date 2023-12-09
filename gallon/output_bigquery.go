@@ -1,16 +1,15 @@
 package gallon
 
 import (
+	"bytes"
 	"cloud.google.com/go/bigquery"
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
-	"os"
 	"strings"
 )
 
@@ -37,6 +36,14 @@ func NewOutputPluginBigQuery(
 		schema:      schema,
 		deserialize: deserialize,
 	}
+}
+
+type bqRecordWrapper map[string]bigquery.Value
+
+var _ bigquery.ValueSaver = bqRecordWrapper{}
+
+func (w bqRecordWrapper) Save() (row map[string]bigquery.Value, insertID string, err error) {
+	return w, "", nil
 }
 
 var _ OutputPlugin = &OutputPluginBigQuery{}
@@ -66,23 +73,33 @@ func (p *OutputPluginBigQuery) Load(
 	}()
 
 	loadedTotal := 0
+	buffer := new(bytes.Buffer)
+	temporaryTableInserter := temporaryTable.Inserter()
 
-	temporaryCsvFilePath := fmt.Sprintf("%v.csv", temporaryTableId)
-	temporaryFile, err := os.Create(temporaryCsvFilePath)
-	if err != nil {
-		return err
+	saveRecords := func(msgSlice []interface{}) {
+		for _, msg := range msgSlice {
+			values, err := p.deserialize(msg)
+			if err != nil {
+				errs <- fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err)
+				continue
+			}
+
+			bqRecords := bqRecordWrapper{}
+			for i, v := range values {
+				bqRecords[p.schema[i].Name] = v
+			}
+
+			if err := temporaryTableInserter.Put(ctx, bqRecords); err != nil {
+				errs <- fmt.Errorf("failed to insert into temporary table: %v (error: %v)", values, err)
+				continue
+			}
+		}
+
+		if len(msgSlice) > 0 {
+			loadedTotal += len(msgSlice)
+			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+		}
 	}
-	defer func() {
-		if err := temporaryFile.Close(); err != nil {
-			p.logger.Error(err, "failed to close temporary file", "filePath", temporaryCsvFilePath)
-		}
-
-		if err := os.Remove(temporaryFile.Name()); err != nil {
-			p.logger.Error(err, "failed to remove temporary file", "filePath", temporaryCsvFilePath)
-		}
-	}()
-
-	temporaryFileWriter := csv.NewWriter(temporaryFile)
 
 loop:
 	for {
@@ -93,43 +110,17 @@ loop:
 			if !ok {
 				break loop
 			}
-
-			msgSlice := msgs.([]interface{})
-
-			for _, msg := range msgSlice {
-				values, err := p.deserialize(msg)
-				if err != nil {
-					errs <- fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err)
-					continue
-				}
-
-				cells := []string{}
-				for _, value := range values {
-					cells = append(cells, fmt.Sprintf("%v", value))
-				}
-
-				if err := temporaryFileWriter.Write(cells); err != nil {
-					errs <- fmt.Errorf("failed to write csv record: %v (error: %v)", cells, err)
-					continue
-				}
-			}
-
-			if len(msgSlice) > 0 {
-				loadedTotal += len(msgSlice)
-				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
-			}
+			saveRecords(msgs.([]interface{}))
 		}
 	}
 
-	temporaryFileWriter.Flush()
+	for msgs := range messages {
+		saveRecords(msgs.([]interface{}))
+	}
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	temporaryFile, err = os.Open(temporaryCsvFilePath)
-	if err != nil {
-		return err
-	}
-	source := bigquery.NewReaderSource(temporaryFile)
+	source := bigquery.NewReaderSource(buffer)
 
 	loader := temporaryTable.LoaderFrom(source)
 	loader.WriteDisposition = bigquery.WriteTruncate
@@ -149,6 +140,7 @@ loop:
 	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
 
 	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+
 	copier.WriteDisposition = bigquery.WriteTruncate
 
 	job, err = copier.Run(ctx)
