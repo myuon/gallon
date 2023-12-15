@@ -153,6 +153,11 @@ type InputPluginSqlConfigSchemaColumn struct {
 }
 
 func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface{}, error) {
+	// if value is nil, returns nil anyway
+	if value == nil {
+		return nil, nil
+	}
+
 	switch c.Type {
 	case "string":
 		v, ok := value.(string)

@@ -81,6 +81,12 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 
+		// 50% chance to have partner
+		// NOTE: gofakeit does not support nullable bool
+		if gofakeit.Bool() {
+			v.HasPartner = nil
+		}
+
 		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner); err != nil {
 			return err
 		}
