@@ -111,7 +111,7 @@ func (p *OutputPluginBigQuery) Load(
 	loadedTotal := 0
 
 	temporaryCsvFilePath := fmt.Sprintf("%v.csv", temporaryTableId)
-	temporaryFile, err := os.Create(temporaryCsvFilePath)
+	temporaryFile, err := os.CreateTemp("", temporaryCsvFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %v", err)
 	}
@@ -120,7 +120,7 @@ func (p *OutputPluginBigQuery) Load(
 			p.logger.Error(err, "failed to close temporary file", "path", temporaryCsvFilePath)
 		}
 
-		if err := os.Remove(temporaryCsvFilePath); err != nil {
+		if err := os.Remove(temporaryFile.Name()); err != nil {
 			p.logger.Error(err, "failed to remove temporary file", "path", temporaryCsvFilePath)
 		}
 	}()
@@ -182,9 +182,9 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	temporaryFile, err = os.Open(temporaryCsvFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to open temporary file: %v", err)
+	// Seek to the beginning of the file
+	if _, err := temporaryFile.Seek(0, 0); err != nil {
+		return fmt.Errorf("failed to seek temporary file: %v", err)
 	}
 
 	source := bigquery.NewReaderSource(temporaryFile)
