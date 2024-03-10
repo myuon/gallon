@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"github.com/docker/docker/pkg/ioutils"
 	"github.com/go-logr/zapr"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -13,6 +12,18 @@ import (
 )
 
 var logger = zapr.NewLogger(zap.Must(zap.NewDevelopment()))
+
+type BufioWriteCloser struct {
+	*bufio.Writer
+}
+
+func NewNopWriteCloser(w *bufio.Writer) BufioWriteCloser {
+	return BufioWriteCloser{w}
+}
+
+func (b BufioWriteCloser) Close() error {
+	return b.Flush()
+}
 
 func Test_format_csv(t *testing.T) {
 	configYml := `
@@ -29,9 +40,7 @@ header: true
 		t.Errorf("Could not create plugin: %s", err)
 	}
 	plugin.newWriter = func() (io.WriteCloser, error) {
-		return ioutils.NewWriteCloserWrapper(writer, func() error {
-			return writer.Flush()
-		}), nil
+		return NewNopWriteCloser(writer), nil
 	}
 
 	g := Gallon{
