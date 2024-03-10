@@ -127,6 +127,16 @@ func (p *OutputPluginBigQuery) Load(
 
 	temporaryFileWriter := csv.NewWriter(temporaryFile)
 
+	// write header
+	headers := []string{}
+	for _, v := range p.schema {
+		headers = append(headers, v.Name)
+	}
+
+	if err := temporaryFileWriter.Write(headers); err != nil {
+		return fmt.Errorf("failed to write header to temporary file: %v", err)
+	}
+
 loop:
 	for {
 		select {
@@ -197,8 +207,12 @@ loop:
 
 	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
 
-	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+	// NOTE: CopierFrom is not supported by bigquery-emulator
+	// copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+
+	copier := p.client.Query(fmt.Sprintf("SELECT * FROM `%v.%v`", temporaryTable.DatasetID, temporaryTable.TableID))
 	copier.WriteDisposition = bigquery.WriteTruncate
+	copier.Dst = p.client.Dataset(p.datasetId).Table(p.tableId)
 
 	job, err = copier.Run(ctx)
 	if err != nil {

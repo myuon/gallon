@@ -5,13 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"log"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -24,10 +27,10 @@ func init() {
 }
 
 type UserTable struct {
-	ID        string `json:"id" fake:"{uuid}"`
-	Name      string `json:"name" fake:"{firstname}"`
-	Age       int    `json:"age" fake:"{number:1,100}"`
-	CreatedAt int64  `json:"createdAt" fake:"{number:949720320,1896491520}"`
+	ID        string `json:"id" bigquery:"id"`
+	Name      string `json:"name" bigquery:"name"`
+	Age       int    `json:"age" bigquery:"age"`
+	CreatedAt int64  `json:"created_at" bigquery:"created_at"`
 }
 
 var client *bigquery.Client
@@ -109,7 +112,7 @@ in:
       type: name
     age:
       type: int
-      min: 0
+      min: 1
       max: 100
     created_at:
       type: unixtime
@@ -133,19 +136,10 @@ out:
 		t.Errorf("Could not run command: %s", err)
 	}
 
-	job, err := client.Query("SELECT * FROM `dataset1.user`").Run(context.Background())
-	if err != nil {
-		t.Errorf("Could not run query: %s", err)
-	}
+	it := client.Dataset("dataset1").Table("user").Read(context.Background())
 
-	if _, err := job.Wait(context.Background()); err != nil {
-		t.Errorf("Could not wait for job: %s", err)
-	}
-
-	it, err := job.Read(context.Background())
-	if err != nil {
-		t.Errorf("Could not read job: %s", err)
-	}
+	count := 0
+	recordSamples := []UserTable{}
 
 	for {
 		var v UserTable
@@ -157,6 +151,20 @@ out:
 			t.Errorf("Could not iterate: %s", err)
 		}
 
-		log.Printf("Got: %v", v)
+		count++
+		if rand.Float32() < 0.1 {
+			recordSamples = append(recordSamples, v)
+		}
+	}
+
+	assert.Equal(t, 100, count)
+
+	for _, record := range recordSamples {
+		_, err := uuid.Parse(record.ID)
+		assert.Nil(t, err)
+
+		assert.NotEqual(t, "", record.Name)
+		assert.NotEqual(t, 0, record.Age)
+		assert.NotEqual(t, int64(0), record.CreatedAt)
 	}
 }
