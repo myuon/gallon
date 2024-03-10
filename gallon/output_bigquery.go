@@ -2,22 +2,17 @@ package gallon
 
 import (
 	"cloud.google.com/go/bigquery"
-	"cloud.google.com/go/bigquery/storage/apiv1/storagepb"
-	"cloud.google.com/go/bigquery/storage/managedwriter"
-	"cloud.google.com/go/bigquery/storage/managedwriter/adapt"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/dynamicpb"
 	"gopkg.in/yaml.v3"
+	"os"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -25,6 +20,7 @@ import (
 type OutputPluginBigQuery struct {
 	logger               logr.Logger
 	client               *bigquery.Client
+	endpoint             *string
 	datasetId            string
 	tableId              string
 	schema               bigquery.Schema
@@ -34,6 +30,7 @@ type OutputPluginBigQuery struct {
 
 func NewOutputPluginBigQuery(
 	client *bigquery.Client,
+	endpoint *string,
 	datasetId string,
 	tableId string,
 	schema bigquery.Schema,
@@ -42,6 +39,7 @@ func NewOutputPluginBigQuery(
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
 		client:               client,
+		endpoint:             endpoint,
 		datasetId:            datasetId,
 		tableId:              tableId,
 		schema:               schema,
@@ -87,8 +85,6 @@ func (p *OutputPluginBigQuery) Load(
 	messages chan interface{},
 	errs chan error,
 ) error {
-	projectId := p.client.Project()
-
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
 	temporaryTable := p.client.Dataset(p.datasetId).Table(temporaryTableId)
 	if err := temporaryTable.Create(ctx, &bigquery.TableMetadata{
@@ -115,91 +111,19 @@ func (p *OutputPluginBigQuery) Load(
 
 	loadedTotal := 0
 
-	mwriter, err := managedwriter.NewClient(ctx, projectId)
+	temporaryJsonlFilePath := fmt.Sprintf("%v.jsonl.gz", temporaryTableId)
+	temporaryFile, err := os.CreateTemp("", temporaryJsonlFilePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create temporary file: %v", err)
 	}
-	defer mwriter.Close()
-
-	pendingStream, err := mwriter.CreateWriteStream(ctx, &storagepb.CreateWriteStreamRequest{
-		Parent: fmt.Sprintf("projects/%s/datasets/%s/tables/%s", projectId, p.datasetId, temporaryTableId),
-		WriteStream: &storagepb.WriteStream{
-			Type: storagepb.WriteStream_PENDING,
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	tableSchema, err := adapt.BQSchemaToStorageTableSchema(p.schema)
-	if err != nil {
-		return err
-	}
-	descriptor, err := adapt.StorageSchemaToProto2Descriptor(tableSchema, "gallon")
-	if err != nil {
-		return err
-	}
-	messageDescriptor, ok := descriptor.(protoreflect.MessageDescriptor)
-	if !ok {
-		return fmt.Errorf("failed to convert to message descriptor")
-	}
-
-	managedStream, err := mwriter.NewManagedStream(
-		ctx,
-		managedwriter.WithStreamName(pendingStream.GetName()),
-		managedwriter.WithSchemaDescriptor(protodesc.ToDescriptorProto(messageDescriptor)),
-	)
-	if err != nil {
-		return err
-	}
-	defer managedStream.Close()
-
-	saveRecords := func(msgSlice []interface{}) {
-		rows := [][]byte{}
-		for _, msg := range msgSlice {
-			values, err := p.deserialize(msg)
-			if err != nil {
-				errs <- fmt.Errorf("failed to deserialize dynamodb record: %v (error: %v)", msg, err)
-				continue
-			}
-
-			mp := map[string]interface{}{}
-			for i, v := range values {
-				mp[p.schema[i].Name] = v
-			}
-
-			j, err := json.Marshal(&mp)
-			if err != nil {
-				errs <- fmt.Errorf("failed to marshal: %v (error: %v)", mp, err)
-				continue
-			}
-
-			message := dynamicpb.NewMessage(messageDescriptor)
-
-			if err := protojson.Unmarshal(j, message); err != nil {
-				errs <- fmt.Errorf("failed to unmarshal: %v (error: %v)", mp, err)
-				continue
-			}
-
-			bs, err := proto.Marshal(message)
-			if err != nil {
-				errs <- fmt.Errorf("failed to marshal: %v (error: %v)", mp, err)
-				continue
-			}
-
-			rows = append(rows, bs)
+	defer func() {
+		if err := os.Remove(temporaryFile.Name()); err != nil {
+			p.logger.Error(err, "failed to remove temporary file", "path", temporaryFile.Name())
 		}
+	}()
 
-		if _, err := managedStream.AppendRows(ctx, rows); err != nil {
-			errs <- fmt.Errorf("failed to append rows: %v (error: %v)", rows, err)
-			return
-		}
-
-		if len(msgSlice) > 0 {
-			loadedTotal += len(msgSlice)
-			p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
-		}
-	}
+	temporaryFileGzipWriter := gzip.NewWriter(temporaryFile)
+	temporaryFileWriter := json.NewEncoder(temporaryFileGzipWriter)
 
 loop:
 	for {
@@ -210,60 +134,101 @@ loop:
 			if !ok {
 				break loop
 			}
-			saveRecords(msgs.([]interface{}))
+
+			msgsSlice, ok := msgs.([]interface{})
+			if !ok {
+				errs <- fmt.Errorf("unexpected type: %T", reflect.TypeOf(msgs))
+				continue
+			}
+
+			for _, msg := range msgsSlice {
+				values, err := p.deserialize(msg)
+				if err != nil {
+					errs <- fmt.Errorf("failed to deserialize: %v, %v", msg, err)
+					continue
+				}
+
+				mp := map[string]interface{}{}
+				for i, v := range p.schema {
+					mp[v.Name] = values[i]
+				}
+
+				if err := temporaryFileWriter.Encode(mp); err != nil {
+					errs <- fmt.Errorf("failed to write to temporary file: %v, %v", values, err)
+					continue
+				}
+			}
+
+			if len(msgsSlice) > 0 {
+				loadedTotal += len(msgsSlice)
+				p.logger.Info(fmt.Sprintf("loaded %v rows", loadedTotal))
+			}
 		}
 	}
 
-	for msgs := range messages {
-		saveRecords(msgs.([]interface{}))
+	if err := temporaryFileGzipWriter.Close(); err != nil {
+		return fmt.Errorf("failed to close gzip writer: %v", err)
+	}
+
+	if err := temporaryFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %v", err)
 	}
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	rowCount, err := managedStream.Finalize(ctx)
+	temporaryFile, err = os.Open(temporaryFile.Name())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open temporary file: %v", err)
 	}
 
-	p.logger.Info(fmt.Sprintf("%v: finalized %v rows", managedStream.StreamName(), rowCount))
+	p.logger.Info(fmt.Sprintf("opened temporary file %v", temporaryFile.Name()))
 
-	resp, err := mwriter.BatchCommitWriteStreams(ctx, &storagepb.BatchCommitWriteStreamsRequest{
-		Parent:       managedwriter.TableParentFromStreamName(managedStream.StreamName()),
-		WriteStreams: []string{managedStream.StreamName()},
-	})
+	reader, err := gzip.NewReader(temporaryFile)
 	if err != nil {
-		return err
-	}
-	if len(resp.GetStreamErrors()) > 0 {
-		return fmt.Errorf("failed to commit stream: %v", resp.GetStreamErrors())
+		return fmt.Errorf("failed to create gzip reader: %v", err)
 	}
 
-	p.logger.Info(fmt.Sprintf("Table data committed at %v", resp.GetCommitTime().AsTime().Format(time.RFC3339Nano)))
+	p.logger.Info(fmt.Sprintf("created gzip reader"))
 
-	query := p.client.Query(fmt.Sprintf("SELECT * FROM `%v.%v` LIMIT %v", p.datasetId, temporaryTableId, rowCount))
-	query.WriteDisposition = bigquery.WriteTruncate
-	query.Dst = p.client.Dataset(p.datasetId).Table(p.tableId)
+	source := bigquery.NewReaderSource(reader)
+	source.SourceFormat = bigquery.JSON
+	source.Schema = p.schema
 
-	job, err := query.Run(ctx)
+	loader := temporaryTable.LoaderFrom(source)
+	loader.WriteDisposition = bigquery.WriteTruncate
+
+	job, err := loader.Run(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load: %v", err)
 	}
 	status, err := job.Wait(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to wait for job: %v", err)
 	}
 	if err := status.Err(); err != nil {
-		return err
-	}
-	if !status.Done() {
-		return fmt.Errorf("copier job is not done: %v", status)
+		return fmt.Errorf("job failed: %v", err)
 	}
 
-	/* NOTE: CopierFrom is not working...?
+	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
 
-	copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+	// NOTE: CopierFrom is not supported by bigquery-emulator
+	// copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
+
+	copier := p.client.Query(fmt.Sprintf("SELECT * FROM `%v.%v`", temporaryTable.DatasetID, temporaryTable.TableID))
 	copier.WriteDisposition = bigquery.WriteTruncate
-	*/
+	copier.Dst = p.client.Dataset(p.datasetId).Table(p.tableId)
+
+	job, err = copier.Run(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to copy: %v", err)
+	}
+	status, err = job.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to wait for job: %v", err)
+	}
+	if err := status.Err(); err != nil {
+		return fmt.Errorf("job failed: %v", err)
+	}
 
 	p.logger.Info(fmt.Sprintf("copied from %v to %v", temporaryTable.TableID, p.tableId))
 
@@ -320,6 +285,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 
 	return NewOutputPluginBigQuery(
 		client,
+		config.Endpoint,
 		config.DatasetId,
 		config.TableId,
 		schema,
