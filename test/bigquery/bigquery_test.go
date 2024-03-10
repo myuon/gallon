@@ -3,15 +3,13 @@ package bigquery
 import (
 	"cloud.google.com/go/bigquery"
 	"context"
+	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/brianvoe/gofakeit/v6"
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"go.uber.org/zap"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"log"
 	"os"
@@ -34,62 +32,6 @@ type UserTable struct {
 
 var client *bigquery.Client
 var endpoint string
-
-func NewFakeUserTable() (UserTable, error) {
-	v := UserTable{}
-	if err := gofakeit.Struct(&v); err != nil {
-		return v, err
-	}
-
-	return v, nil
-}
-
-func Migrate(client *dynamodb.Client) error {
-	ctx := context.Background()
-	if _, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
-		TableName: aws.String("users"),
-		AttributeDefinitions: []types.AttributeDefinition{
-			{
-				AttributeName: aws.String("id"),
-				AttributeType: types.ScalarAttributeTypeS,
-			},
-		},
-		KeySchema: []types.KeySchemaElement{
-			{
-				AttributeName: aws.String("id"),
-				KeyType:       types.KeyTypeHash,
-			},
-		},
-		BillingMode: types.BillingModePayPerRequest,
-	}); err != nil {
-		return err
-	}
-
-	for i := 0; i < 1000; i++ {
-		v, err := NewFakeUserTable()
-		if err != nil {
-			return err
-		}
-
-		record := map[string]types.AttributeValue{
-			"id":         &types.AttributeValueMemberS{Value: v.ID},
-			"name":       &types.AttributeValueMemberS{Value: v.Name},
-			"age":        &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v.Age)},
-			"created_at": &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v.CreatedAt)},
-		}
-
-		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
-			TableName: aws.String("users"),
-			Item:      record,
-		}); err != nil {
-			return err
-		}
-	}
-
-	log.Printf("Migrated %v rows", 1000)
-
-	return nil
-}
 
 func TestMain(m *testing.M) {
 	var exitCode int
@@ -138,7 +80,10 @@ func TestMain(m *testing.M) {
 	port := resource.GetPort("9050/tcp")
 	endpoint = fmt.Sprintf("http://localhost:%v", port)
 
-	client, _ := bigquery.NewClient(context.Background(), "test", option.WithEndpoint(endpoint))
+	client, err = bigquery.NewClient(context.Background(), "test", option.WithEndpoint(endpoint))
+	if err != nil {
+		log.Panicf("Could not create client: %v", err)
+	}
 
 	if err := pool.Retry(func() error {
 		log.Println("Trying to connect to database...")
@@ -188,8 +133,7 @@ out:
 		t.Errorf("Could not run command: %s", err)
 	}
 
-	table := client.Dataset("dataset1").Table("user")
-	job, err := client.Query(fmt.Sprintf("SELECT * FROM %v", table.FullyQualifiedName())).Run(context.Background())
+	job, err := client.Query("SELECT * FROM `dataset1.user`").Run(context.Background())
 	if err != nil {
 		t.Errorf("Could not run query: %s", err)
 	}
@@ -206,6 +150,9 @@ out:
 	for {
 		var v UserTable
 		err := it.Next(&v)
+		if errors.Is(err, iterator.Done) {
+			break
+		}
 		if err != nil {
 			t.Errorf("Could not iterate: %s", err)
 		}

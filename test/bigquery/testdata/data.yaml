@@ -2,3 +2,14 @@ projects:
   - id: test
     datasets:
       - id: dataset1
+        tables:
+          - id: user
+            columns:
+              - name: id
+                type: STRING
+              - name: name
+                type: STRING
+              - name: age
+                type: INTEGER
+              - name: created_at
+                type: INTEGER

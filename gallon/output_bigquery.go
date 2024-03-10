@@ -25,6 +25,7 @@ import (
 type OutputPluginBigQuery struct {
 	logger               logr.Logger
 	client               *bigquery.Client
+	endpoint             *string
 	datasetId            string
 	tableId              string
 	schema               bigquery.Schema
@@ -34,6 +35,7 @@ type OutputPluginBigQuery struct {
 
 func NewOutputPluginBigQuery(
 	client *bigquery.Client,
+	endpoint *string,
 	datasetId string,
 	tableId string,
 	schema bigquery.Schema,
@@ -42,6 +44,7 @@ func NewOutputPluginBigQuery(
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
 		client:               client,
+		endpoint:             endpoint,
 		datasetId:            datasetId,
 		tableId:              tableId,
 		schema:               schema,
@@ -320,6 +323,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 
 	return NewOutputPluginBigQuery(
 		client,
+		config.Endpoint,
 		config.DatasetId,
 		config.TableId,
 		schema,
