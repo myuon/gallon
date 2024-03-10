@@ -2,8 +2,9 @@ package gallon
 
 import (
 	"cloud.google.com/go/bigquery"
+	"compress/gzip"
 	"context"
-	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/go-logr/logr"
@@ -110,32 +111,19 @@ func (p *OutputPluginBigQuery) Load(
 
 	loadedTotal := 0
 
-	temporaryCsvFilePath := fmt.Sprintf("%v.csv", temporaryTableId)
-	temporaryFile, err := os.CreateTemp("", temporaryCsvFilePath)
+	temporaryJsonlFilePath := fmt.Sprintf("%v.jsonl.gz", temporaryTableId)
+	temporaryFile, err := os.CreateTemp("", temporaryJsonlFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %v", err)
 	}
 	defer func() {
-		if err := temporaryFile.Close(); err != nil {
-			p.logger.Error(err, "failed to close temporary file", "path", temporaryCsvFilePath)
-		}
-
 		if err := os.Remove(temporaryFile.Name()); err != nil {
-			p.logger.Error(err, "failed to remove temporary file", "path", temporaryCsvFilePath)
+			p.logger.Error(err, "failed to remove temporary file", "path", temporaryFile.Name())
 		}
 	}()
 
-	temporaryFileWriter := csv.NewWriter(temporaryFile)
-
-	// write header
-	headers := []string{}
-	for _, v := range p.schema {
-		headers = append(headers, v.Name)
-	}
-
-	if err := temporaryFileWriter.Write(headers); err != nil {
-		return fmt.Errorf("failed to write header to temporary file: %v", err)
-	}
+	temporaryFileGzipWriter := gzip.NewWriter(temporaryFile)
+	temporaryFileWriter := json.NewEncoder(temporaryFileGzipWriter)
 
 loop:
 	for {
@@ -160,13 +148,13 @@ loop:
 					continue
 				}
 
-				cells := []string{}
-				for _, v := range values {
-					cells = append(cells, fmt.Sprintf("%v", v))
+				mp := map[string]interface{}{}
+				for i, v := range p.schema {
+					mp[v.Name] = values[i]
 				}
 
-				if err := temporaryFileWriter.Write(cells); err != nil {
-					errs <- fmt.Errorf("failed to write to temporary file: %v, %v", cells, err)
+				if err := temporaryFileWriter.Encode(mp); err != nil {
+					errs <- fmt.Errorf("failed to write to temporary file: %v, %v", values, err)
 					continue
 				}
 			}
@@ -178,17 +166,33 @@ loop:
 		}
 	}
 
-	temporaryFileWriter.Flush()
+	if err := temporaryFileGzipWriter.Close(); err != nil {
+		return fmt.Errorf("failed to close gzip writer: %v", err)
+	}
+
+	if err := temporaryFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %v", err)
+	}
 
 	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
 
-	// Seek to the beginning of the file
-	if _, err := temporaryFile.Seek(0, 0); err != nil {
-		return fmt.Errorf("failed to seek temporary file: %v", err)
+	temporaryFile, err = os.Open(temporaryFile.Name())
+	if err != nil {
+		return fmt.Errorf("failed to open temporary file: %v", err)
 	}
 
-	source := bigquery.NewReaderSource(temporaryFile)
-	source.SourceFormat = bigquery.CSV
+	p.logger.Info(fmt.Sprintf("opened temporary file %v", temporaryFile.Name()))
+
+	reader, err := gzip.NewReader(temporaryFile)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+
+	p.logger.Info(fmt.Sprintf("created gzip reader"))
+
+	source := bigquery.NewReaderSource(reader)
+	source.SourceFormat = bigquery.JSON
+	source.Schema = p.schema
 
 	loader := temporaryTable.LoaderFrom(source)
 	loader.WriteDisposition = bigquery.WriteTruncate
