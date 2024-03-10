@@ -130,3 +130,134 @@ if err := g.Run(); err != nil {
     return err
 }
 ```
+
+## Plugin Configurations for YAML
+
+### DynamoDB Input Plugin
+
+```yaml
+in:
+  type: dynamodb
+  region: ap-northeast-1
+  table: users
+  endpoint: "http://localhost:8000"
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: number
+    created_at:
+      type: number
+```
+
+- region: Your AWS Region
+- table: Your DynamoDB Table name
+- endpoint: for dynamodb-local (optional)
+- schema
+  - type: `string`, `number`, `boolean` are supported
+
+### SQL(RDB) Input Plugin
+
+```yaml
+in:
+  type: sql
+  driver: mysql
+  table: users
+  database_url: user:password@tcp(localhost:3306)/dbname
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: int
+    created_at:
+      type: int
+    birthday:
+      type: time
+    has_partner:
+      type: bool
+```
+
+- driver: `mysql`, `postgres` are supported
+- table: Table name
+- database_url: Database URL. This will be passed to `sql.Open` with the driver name.
+- schema
+  - type: `string`, `int`, `float`, `time`, `bool` are supported. NULL are always acceptable.
+
+### Random Input Plugin
+
+```yaml
+in:
+  type: random
+  pageLimit: 10
+  pageSize: 50
+  schema:
+    id:
+      type: uuid
+    name:
+      type: string
+    email:
+      type: email
+    age:
+      type: int
+      min: 10
+      max: 100
+    born_at:
+      type: time
+      format: rfc3339
+    created_at:
+      type: unixtime
+```
+
+- pageLimit: Number of pages (optional, default: 10)
+- pageSize: Number of records per page (optional, default: 10)
+- schema
+  - type: `string`, `int`, `float`, `bool`, `name`, `url`, `email`, `uuid`, `time`, `unixtime` (int64) are supported.
+  - min, max: for `int` type (optional)
+  - format: for `time` type. Specify `rfc3339`, or it returns `YYYY-MM-DD` date string. (optional)
+
+### BigQuery Output Plugin
+
+```yaml
+out:
+  type: bigquery
+  location: asia-northeast1
+  projectId: default-364617
+  datasetId: test
+  tableId: users_test
+  endpoint: "http://localhost:9050"
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: integer
+    created_at:
+      type: integer
+  deleteTemporaryTable: true
+```
+
+- location: Your BigQuery location
+- projectId: Your GCP Project ID
+- datasetId: Your BigQuery Dataset ID
+- tableId: Your BigQuery Table ID
+- endpoint: for bigquery-emulator (optional)
+- schema
+  - type: `string`, `integer`, `float`, `boolean`, `timestamp`, `record` are supported
+- deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
+
+### File Output Plugin
+
+```yaml
+out:
+    type: file
+    filepath: /tmp/users.csv
+    format: csv
+````
+
+- filepath: File path
+- format: `csv`, `json` are supported
