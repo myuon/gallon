@@ -3,7 +3,9 @@ package gallon
 import (
 	"context"
 	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -140,9 +142,11 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 		return nil, err
 	}
 
-	cfg := aws.Config{
-		Region: dbConfig.Region,
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		return nil, err
 	}
+	cfg.Region = dbConfig.Region
 
 	if dbConfig.Endpoint != nil {
 		cfg.EndpointResolverWithOptions = aws.EndpointResolverWithOptionsFunc(
