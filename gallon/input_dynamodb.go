@@ -174,7 +174,12 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 			record := map[string]interface{}{}
 
 			for k, v := range item {
-				value, err := dbConfig.Schema[k].getValue(v)
+				schema, ok := dbConfig.Schema[k]
+				if !ok {
+					continue
+				}
+
+				value, err := schema.getValue(v)
 				if err != nil {
 					return nil, err
 				}
