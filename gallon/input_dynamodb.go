@@ -105,7 +105,9 @@ type InputPluginDynamoDbConfig struct {
 }
 
 type InputPluginDynamoDbConfigSchemaColumn struct {
-	Type string `yaml:"type"`
+	Type       string                                           `yaml:"type"`
+	Properties map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"properties,omitempty"`
+	Items      *InputPluginDynamoDbConfigSchemaColumn           `yaml:"items,omitempty"`
 }
 
 func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) (interface{}, error) {
@@ -131,6 +133,49 @@ func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) 
 		}
 
 		return value.Value, nil
+	case "object":
+		value, ok := v.(*types.AttributeValueMemberM)
+		if !ok {
+			return nil, fmt.Errorf("invalid type: %v for value: %v", c.Type, v)
+		}
+
+		result := map[string]interface{}{}
+		for k, v := range value.Value {
+			prop, ok := c.Properties[k]
+			if !ok {
+				continue
+			}
+
+			val, err := prop.getValue(v)
+			if err != nil {
+				return nil, err
+			}
+
+			result[k] = val
+		}
+
+		return result, nil
+	case "array":
+		value, ok := v.(*types.AttributeValueMemberL)
+		if !ok {
+			return nil, fmt.Errorf("invalid type: %v for value: %v", c.Type, v)
+		}
+
+		if c.Items == nil {
+			return nil, fmt.Errorf("items schema is required for array type")
+		}
+
+		result := []interface{}{}
+		for _, item := range value.Value {
+			val, err := c.Items.getValue(item)
+			if err != nil {
+				return nil, err
+			}
+
+			result = append(result, val)
+		}
+
+		return result, nil
 	default:
 		return nil, fmt.Errorf("unsupported type: %v", c.Type)
 	}
