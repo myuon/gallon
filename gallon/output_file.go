@@ -7,23 +7,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-logr/logr"
-	"gopkg.in/yaml.v3"
 	"io"
 	"log"
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/go-logr/logr"
+	"gopkg.in/yaml.v3"
 )
 
 type OutputPluginFile struct {
 	logger      logr.Logger
-	deserialize func(interface{}) ([]byte, error)
+	deserialize func(any) ([]byte, error)
 	newWriter   func() (io.WriteCloser, error)
 }
 
 func NewOutputPluginFile(
-	deserialize func(interface{}) ([]byte, error),
+	deserialize func(any) ([]byte, error),
 	newWriter func() (io.WriteCloser, error),
 ) *OutputPluginFile {
 	return &OutputPluginFile{
@@ -40,7 +41,7 @@ func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
 
 func (p *OutputPluginFile) Load(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	fs, err := p.newWriter()
@@ -66,7 +67,7 @@ loop:
 				break loop
 			}
 
-			msgSlice := msgs.([]interface{})
+			msgSlice := msgs.([]any)
 
 			for _, msg := range msgSlice {
 				bs, err := p.deserialize(msg)
@@ -122,10 +123,10 @@ func NewOutputPluginFileFromConfig(configYml []byte) (*OutputPluginFile, error) 
 	), nil
 }
 
-func defineDeserializer(format string) (func(interface{}) ([]byte, error), error) {
+func defineDeserializer(format string) (func(any) ([]byte, error), error) {
 	switch strings.ToLower(format) {
 	case "jsonl":
-		return func(i interface{}) ([]byte, error) {
+		return func(i any) ([]byte, error) {
 			j, err := json.Marshal(i)
 			if err != nil {
 				return nil, err
@@ -134,10 +135,10 @@ func defineDeserializer(format string) (func(interface{}) ([]byte, error), error
 			return []byte(fmt.Sprintf("%v\n", string(j))), nil
 		}, nil
 	case "csv":
-		return func(i interface{}) ([]byte, error) {
-			m, ok := i.(map[string]interface{})
+		return func(i any) ([]byte, error) {
+			m, ok := i.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("failed to convert to map[string]interface{}: %v", i)
+				return nil, fmt.Errorf("failed to convert to map[string]any: %v", i)
 			}
 
 			keys := []string{}

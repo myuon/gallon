@@ -17,13 +17,13 @@ type InputPluginDynamoDb struct {
 	logger    logr.Logger
 	client    *dynamodb.Client
 	tableName string
-	serialize func(map[string]types.AttributeValue) (interface{}, error)
+	serialize func(map[string]types.AttributeValue) (any, error)
 }
 
 func NewInputPluginDynamoDb(
 	client *dynamodb.Client,
 	tableName string,
-	serialize func(map[string]types.AttributeValue) (interface{}, error),
+	serialize func(map[string]types.AttributeValue) (any, error),
 ) *InputPluginDynamoDb {
 	return &InputPluginDynamoDb{
 		client:    client,
@@ -40,7 +40,7 @@ func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
 
 func (p *InputPluginDynamoDb) Extract(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	hasNext := true
@@ -74,7 +74,7 @@ loop:
 				hasNext = false
 			}
 
-			var msgs []interface{}
+			var msgs []any
 			for _, item := range resp.Items {
 				record, err := p.serialize(item)
 				if err != nil {
@@ -110,7 +110,7 @@ type InputPluginDynamoDbConfigSchemaColumn struct {
 	Items      *InputPluginDynamoDbConfigSchemaColumn           `yaml:"items,omitempty"`
 }
 
-func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) (interface{}, error) {
+func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) (any, error) {
 	switch c.Type {
 	case "string":
 		value, ok := v.(*types.AttributeValueMemberS)
@@ -139,7 +139,7 @@ func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) 
 			return nil, fmt.Errorf("invalid type: %v for value: %v", c.Type, v)
 		}
 
-		result := map[string]interface{}{}
+		result := map[string]any{}
 		for k, v := range value.Value {
 			prop, ok := c.Properties[k]
 			if !ok {
@@ -165,7 +165,7 @@ func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) 
 			return nil, fmt.Errorf("items schema is required for array type")
 		}
 
-		result := []interface{}{}
+		result := []any{}
 		for _, item := range value.Value {
 			val, err := c.Items.getValue(item)
 			if err != nil {
@@ -195,7 +195,7 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 
 	if dbConfig.Endpoint != nil {
 		cfg.EndpointResolverWithOptions = aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			func(service, region string, options ...any) (aws.Endpoint, error) {
 				return aws.Endpoint{URL: *dbConfig.Endpoint}, nil
 			})
 		cfg.Credentials = credentials.StaticCredentialsProvider{
@@ -215,8 +215,8 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 	return NewInputPluginDynamoDb(
 		client,
 		dbConfig.Table,
-		func(item map[string]types.AttributeValue) (interface{}, error) {
-			record := map[string]interface{}{}
+		func(item map[string]types.AttributeValue) (any, error) {
+			record := map[string]any{}
 
 			for k, v := range item {
 				schema, ok := dbConfig.Schema[k]

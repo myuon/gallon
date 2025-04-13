@@ -9,6 +9,7 @@ package gallon
 import (
 	"context"
 	"errors"
+
 	"github.com/go-logr/logr"
 )
 
@@ -18,7 +19,7 @@ type InputPlugin interface {
 	ReplaceLogger(logr.Logger)
 	// Extract extracts data from the source and sends it to the messages channel.
 	// If an error occurs, send it to the errs channel.
-	Extract(ctx context.Context, messages chan interface{}, errs chan error) error
+	Extract(ctx context.Context, messages chan any, errs chan error) error
 }
 
 type OutputPlugin interface {
@@ -27,7 +28,7 @@ type OutputPlugin interface {
 	ReplaceLogger(logr.Logger)
 	// Load loads data from the messages channel and sends it to the destination.
 	// If an error occurs, send it to the errs channel.
-	Load(ctx context.Context, messages chan interface{}, errs chan error) error
+	Load(ctx context.Context, messages chan any, errs chan error) error
 }
 
 // Gallon is a struct that runs a migration.
@@ -45,7 +46,7 @@ func (g *Gallon) Run(ctx context.Context) error {
 	g.Input.ReplaceLogger(g.Logger)
 	g.Output.ReplaceLogger(g.Logger)
 
-	messages := make(chan interface{})
+	messages := make(chan any)
 
 	errs := make(chan error, 10)
 	tooManyErrorsLimit := 50

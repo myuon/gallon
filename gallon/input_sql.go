@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/go-logr/logr"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"gopkg.in/yaml.v3"
-	"time"
 )
 
 type InputPluginSql struct {
@@ -17,14 +18,14 @@ type InputPluginSql struct {
 	client    *sql.DB
 	tableName string
 	driver    string
-	serialize func(map[string]interface{}) (interface{}, error)
+	serialize func(map[string]any) (any, error)
 }
 
 func NewInputPluginSql(
 	client *sql.DB,
 	tableName string,
 	driver string,
-	serialize func(map[string]interface{}) (interface{}, error),
+	serialize func(map[string]any) (any, error),
 ) *InputPluginSql {
 	return &InputPluginSql{
 		client:    client,
@@ -42,7 +43,7 @@ func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 
 func (p *InputPluginSql) Extract(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	hasNext := true
@@ -94,10 +95,10 @@ loop:
 				return err
 			}
 
-			msgs := []interface{}{}
+			msgs := []any{}
 			for rows.Next() {
-				columns := make([]interface{}, len(cols))
-				columnPointers := make([]interface{}, len(cols))
+				columns := make([]any, len(cols))
+				columnPointers := make([]any, len(cols))
 				for i := range columns {
 					columnPointers[i] = &columns[i]
 				}
@@ -107,9 +108,9 @@ loop:
 					continue
 				}
 
-				record := map[string]interface{}{}
+				record := map[string]any{}
 				for i, colName := range cols {
-					val := columnPointers[i].(*interface{})
+					val := columnPointers[i].(*any)
 					record[colName] = *val
 				}
 
@@ -152,7 +153,7 @@ type InputPluginSqlConfigSchemaColumn struct {
 	Type string `yaml:"type"`
 }
 
-func (c InputPluginSqlConfigSchemaColumn) getValue(value interface{}) (interface{}, error) {
+func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 	// if value is nil, returns nil anyway
 	if value == nil {
 		return nil, nil
@@ -227,8 +228,8 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 		db,
 		dbConfig.Table,
 		dbConfig.Driver,
-		func(item map[string]interface{}) (interface{}, error) {
-			record := map[string]interface{}{}
+		func(item map[string]any) (any, error) {
+			record := map[string]any{}
 
 			for k, v := range item {
 				value, err := dbConfig.Schema[k].getValue(v)

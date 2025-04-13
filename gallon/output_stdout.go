@@ -4,17 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 )
 
 type OutputPluginStdout struct {
 	logger      logr.Logger
-	deserialize func(interface{}) ([]byte, error)
+	deserialize func(any) ([]byte, error)
 }
 
 func NewOutputPluginStdout(
-	deserialize func(interface{}) ([]byte, error),
+	deserialize func(any) ([]byte, error),
 ) *OutputPluginStdout {
 	return &OutputPluginStdout{
 		deserialize: deserialize,
@@ -29,7 +30,7 @@ func (p *OutputPluginStdout) ReplaceLogger(logger logr.Logger) {
 
 func (p *OutputPluginStdout) Load(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	loadedTotal := 0
@@ -45,7 +46,7 @@ loop:
 				break loop
 			}
 
-			msgSlice := msgs.([]interface{})
+			msgSlice := msgs.([]any)
 
 			for _, msg := range msgSlice {
 				bs, err := p.deserialize(msg)
@@ -81,7 +82,7 @@ func NewOutputPluginStdoutFromConfig(configYml []byte) (*OutputPluginStdout, err
 	}
 
 	return NewOutputPluginStdout(
-		func(msg interface{}) ([]byte, error) {
+		func(msg any) ([]byte, error) {
 			if config.Format == "json" {
 				return json.Marshal(msg)
 			} else {

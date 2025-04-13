@@ -25,7 +25,7 @@ type OutputPluginBigQuery struct {
 	datasetId            string
 	tableId              string
 	schema               bigquery.Schema
-	deserialize          func(interface{}) ([]bigquery.Value, error)
+	deserialize          func(any) ([]bigquery.Value, error)
 	deleteTemporaryTable bool
 }
 
@@ -35,7 +35,7 @@ func NewOutputPluginBigQuery(
 	datasetId string,
 	tableId string,
 	schema bigquery.Schema,
-	deserialize func(interface{}) ([]bigquery.Value, error),
+	deserialize func(any) ([]bigquery.Value, error),
 	deleteTemporaryTable bool,
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
@@ -83,7 +83,7 @@ func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, table
 
 func (p *OutputPluginBigQuery) Load(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
@@ -136,7 +136,7 @@ loop:
 				break loop
 			}
 
-			msgsSlice, ok := msgs.([]interface{})
+			msgsSlice, ok := msgs.([]any)
 			if !ok {
 				errs <- fmt.Errorf("unexpected type: %T", reflect.TypeOf(msgs))
 				continue
@@ -149,7 +149,7 @@ loop:
 					continue
 				}
 
-				mp := map[string]interface{}{}
+				mp := map[string]any{}
 				for i, v := range p.schema {
 					mp[v.Name] = values[i]
 				}
@@ -283,16 +283,16 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		config.DatasetId,
 		config.TableId,
 		schema,
-		func(item interface{}) ([]bigquery.Value, error) {
+		func(item any) ([]bigquery.Value, error) {
 			values := []bigquery.Value{}
 			for _, v := range schema {
-				value := item.(map[string]interface{})[v.Name]
+				value := item.(map[string]any)[v.Name]
 				if v.Type == bigquery.RecordFieldType {
 					if value == nil {
 						values = append(values, nil)
 						continue
 					}
-					recordValue, err := deserializeRecord(value.(map[string]interface{}), v.Schema)
+					recordValue, err := deserializeRecord(value.(map[string]any), v.Schema)
 					if err != nil {
 						return nil, err
 					}
@@ -307,7 +307,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 	), nil
 }
 
-func deserializeRecord(data map[string]interface{}, schema bigquery.Schema) ([]bigquery.Value, error) {
+func deserializeRecord(data map[string]any, schema bigquery.Schema) ([]bigquery.Value, error) {
 	values := []bigquery.Value{}
 	for _, field := range schema {
 		value := data[field.Name]
@@ -316,7 +316,7 @@ func deserializeRecord(data map[string]interface{}, schema bigquery.Schema) ([]b
 				values = append(values, nil)
 				continue
 			}
-			recordValue, err := deserializeRecord(value.(map[string]interface{}), field.Schema)
+			recordValue, err := deserializeRecord(value.(map[string]any), field.Schema)
 			if err != nil {
 				return nil, err
 			}

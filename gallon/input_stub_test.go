@@ -3,15 +3,16 @@ package gallon
 import (
 	"context"
 	"fmt"
+
 	"github.com/go-logr/logr"
 )
 
 type InputPluginStub struct {
-	data [][]map[string]interface{}
+	data [][]map[string]any
 }
 
 func NewInputPluginStub(
-	data [][]map[string]interface{},
+	data [][]map[string]any,
 ) *InputPluginStub {
 	return &InputPluginStub{
 		data: data,
@@ -25,7 +26,7 @@ func (i InputPluginStub) ReplaceLogger(logger logr.Logger) {
 
 func (i InputPluginStub) Extract(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	p := 0
@@ -35,7 +36,7 @@ func (i InputPluginStub) Extract(
 		case <-ctx.Done():
 			return nil
 		default:
-			records := []interface{}{}
+			records := []any{}
 			for _, record := range i.data[p] {
 				records = append(records, record)
 			}

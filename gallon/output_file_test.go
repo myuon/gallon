@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
+	"testing"
+
 	"github.com/go-logr/zapr"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
-	"io"
-	"testing"
 )
 
 var logger = zapr.NewLogger(zap.Must(zap.NewDevelopment()))
@@ -45,7 +46,7 @@ header: true
 
 	g := Gallon{
 		Logger: logger,
-		Input: NewInputPluginStub([][]map[string]interface{}{
+		Input: NewInputPluginStub([][]map[string]any{
 			{
 				{
 					"id":         "1",

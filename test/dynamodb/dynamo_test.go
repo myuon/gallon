@@ -194,7 +194,7 @@ func TestMain(m *testing.M) {
 
 	cfg := aws.Config{}
 	cfg.EndpointResolverWithOptions = aws.EndpointResolverWithOptionsFunc(
-		func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+		func(service, region string, options ...any) (aws.Endpoint, error) {
 			return aws.Endpoint{URL: endpoint}, nil
 		})
 	cfg.Credentials = credentials.StaticCredentialsProvider{
@@ -287,7 +287,7 @@ out:
 			continue
 		}
 
-		var data map[string]interface{}
+		var data map[string]any
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			t.Errorf("Could not unmarshal JSON: %s", err)
 			continue
@@ -308,7 +308,7 @@ out:
 		}
 
 		// アドレスの検証
-		address, ok := data["address"].(map[string]interface{})
+		address, ok := data["address"].(map[string]any)
 		if !ok {
 			t.Errorf("Expected address to be object, got %T", data["address"])
 			continue
@@ -324,7 +324,7 @@ out:
 		}
 
 		// スキルの検証
-		skills, ok := data["skills"].([]interface{})
+		skills, ok := data["skills"].([]any)
 		if !ok {
 			t.Errorf("Expected skills to be array, got %T", data["skills"])
 			continue
@@ -334,7 +334,7 @@ out:
 		}
 
 		for _, skill := range skills {
-			skillMap, ok := skill.(map[string]interface{})
+			skillMap, ok := skill.(map[string]any)
 			if !ok {
 				t.Errorf("Expected skill to be object, got %T", skill)
 				continue

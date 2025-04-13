@@ -4,12 +4,13 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
+
 	"github.com/go-logr/zapr"
 	"github.com/myuon/gallon/gallon"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
-	"os"
 )
 
 // RunCmd defines `gallon run` command.
@@ -34,15 +35,15 @@ var RunCmd = &cobra.Command{
 // GallonConfig is the schema of gallon config yaml.
 // Both `in` and `out` must contain `type` field. Plugins for input/output will be chosen by `type` field
 type GallonConfig struct {
-	In  map[string]interface{} `yaml:"in"`
-	Out map[string]interface{} `yaml:"out"`
+	In  map[string]any `yaml:"in"`
+	Out map[string]any `yaml:"out"`
 }
 
 type GallonConfigType struct {
 	Type string `yaml:"type"`
 }
 
-func getType(config map[string]interface{}) (string, error) {
+func getType(config map[string]any) (string, error) {
 	t, ok := config["type"]
 	if !ok {
 		return "", errors.New("type not found")
@@ -56,7 +57,7 @@ func getType(config map[string]interface{}) (string, error) {
 	return tStr, nil
 }
 
-func getTypeAndYml(config map[string]interface{}) (string, []byte, error) {
+func getTypeAndYml(config map[string]any) (string, []byte, error) {
 	t, err := getType(config)
 	if err != nil {
 		return "", nil, err

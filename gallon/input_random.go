@@ -4,25 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-logr/logr"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"gopkg.in/yaml.v3"
-	"time"
 )
 
 type InputPluginRandom struct {
 	logger    logr.Logger
 	pageSize  int
 	pageLimit int
-	generate  func(int) (interface{}, error)
+	generate  func(int) (any, error)
 }
 
 func NewInputPluginRandom(
 	pageSize int,
 	pageLimit int,
-	generate func(int) (interface{}, error),
+	generate func(int) (any, error),
 ) *InputPluginRandom {
 	return &InputPluginRandom{
 		pageSize:  pageSize,
@@ -39,11 +40,11 @@ func (p *InputPluginRandom) ReplaceLogger(logger logr.Logger) {
 
 func (p *InputPluginRandom) Extract(
 	ctx context.Context,
-	messages chan interface{},
+	messages chan any,
 	errs chan error,
 ) error {
 	for i := 0; i < p.pageLimit; i++ {
-		records := []interface{}{}
+		records := []any{}
 
 		for j := 0; j < p.pageSize; j++ {
 			record, err := p.generate(i)
@@ -76,7 +77,7 @@ type InputPluginRandomConfigSchemaColumn struct {
 	Format *string `yaml:"format"`
 }
 
-func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (interface{}, error) {
+func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (any, error) {
 	switch c.Type {
 	case "string":
 		return gofakeit.LetterN(uint(gofakeit.Number(0, 40))), nil
@@ -129,8 +130,8 @@ func NewInputPluginRandomFromConfig(configYml []byte) (*InputPluginRandom, error
 	return NewInputPluginRandom(
 		config.PageSize,
 		config.PageLimit,
-		func(index int) (interface{}, error) {
-			record := map[string]interface{}{}
+		func(index int) (any, error) {
+			record := map[string]any{}
 
 			for k, v := range config.Schema {
 				value, err := v.generateValue(index)

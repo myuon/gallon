@@ -14,15 +14,15 @@ format: json
 		t.Errorf("Could not create plugin: %s", err)
 	}
 
-	output.deserialize = func(i interface{}) ([]byte, error) {
+	output.deserialize = func(i any) ([]byte, error) {
 		return nil, errors.New("error")
 	}
 
-	data := [][]map[string]interface{}{}
+	data := [][]map[string]any{}
 	for i := 0; i < 10; i++ {
-		page := []map[string]interface{}{}
+		page := []map[string]any{}
 		for j := 0; j < 10; j++ {
-			page = append(page, map[string]interface{}{
+			page = append(page, map[string]any{
 				"id":         "1",
 				"name":       "foo",
 				"age":        20,
