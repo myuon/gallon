@@ -4,16 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/brianvoe/gofakeit/v6"
-	"github.com/myuon/gallon/cmd"
-	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
-	"go.uber.org/zap"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/brianvoe/gofakeit/v6"
+	"github.com/myuon/gallon/cmd"
+	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
+	"go.uber.org/zap"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -31,6 +32,7 @@ type UserTable struct {
 	CreatedAt  int64     `json:"createdAt" fake:"{number:949720320,1896491520}"`
 	Birthday   time.Time `json:"birthday"`
 	HasPartner *bool     `json:"hasPartner"`
+	Metadata   string    `json:"metadata" fake:"{json}"`
 }
 
 func NewFakeUserTable() (UserTable, error) {
@@ -58,6 +60,7 @@ func Migrate(db *sql.DB) error {
 		"created_at INT NOT NULL,",
 		"birthday DATETIME NOT NULL,",
 		"has_partner BOOLEAN,",
+		"metadata JSON,",
 		"PRIMARY KEY (id)",
 		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 	}, "\n"))
@@ -68,7 +71,7 @@ func Migrate(db *sql.DB) error {
 
 	query, err := conn.PrepareContext(
 		ctx,
-		"INSERT INTO users (id, name, age, created_at, birthday, has_partner) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO users (id, name, age, created_at, birthday, has_partner, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return err
@@ -87,7 +90,7 @@ func Migrate(db *sql.DB) error {
 			v.HasPartner = nil
 		}
 
-		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.Metadata); err != nil {
 			return err
 		}
 	}
@@ -199,6 +202,8 @@ in:
       type: time
     has_partner:
       type: bool
+    metadata:
+      type: json
 out:
   type: file
   filepath: ./output.jsonl

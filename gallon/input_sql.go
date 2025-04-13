@@ -3,6 +3,7 @@ package gallon
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -205,6 +206,18 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 		}
 
 		return v, nil
+	case "json":
+		b, ok := value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("value is not json: %v", value)
+		}
+
+		var result any
+		if err := json.Unmarshal(b, &result); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal json: %v", err)
+		}
+
+		return result, nil
 	default:
 		return nil, fmt.Errorf("unknown column type: %v", c.Type)
 	}
