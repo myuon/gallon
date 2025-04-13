@@ -4,15 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/brianvoe/gofakeit/v6"
-	"github.com/myuon/gallon/cmd"
-	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/brianvoe/gofakeit/v7"
+	"github.com/myuon/gallon/cmd"
+	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
 
 	_ "github.com/lib/pq"
 )

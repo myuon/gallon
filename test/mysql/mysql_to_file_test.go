@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brianvoe/gofakeit/v6"
+	"github.com/brianvoe/gofakeit/v7"
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -123,7 +123,7 @@ func TestMain(m *testing.M) {
 	resource, err := pool.RunWithOptions(
 		&dockertest.RunOptions{
 			Repository: "mysql",
-			Tag:        "5.7",
+			Tag:        "8.0",
 			Env:        []string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=test", "MYSQL_CHARSET=utf8mb4"},
 		},
 		func(config *docker.HostConfig) {
