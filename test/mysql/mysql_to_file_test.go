@@ -32,13 +32,30 @@ type UserTable struct {
 	CreatedAt  int64     `json:"createdAt" fake:"{number:949720320,1896491520}"`
 	Birthday   time.Time `json:"birthday"`
 	HasPartner *bool     `json:"hasPartner"`
-	Metadata   string    `json:"metadata" fake:"{json}"`
+	Metadata   *string   `json:"metadata"`
 }
 
 func NewFakeUserTable() (UserTable, error) {
 	v := UserTable{}
 	if err := gofakeit.Struct(&v); err != nil {
 		return v, err
+	}
+
+	// Generate nillable hasPartner
+	// NOTE: gofakeit does not support nullable bool
+	if gofakeit.Bool() {
+		v.HasPartner = nil
+	}
+
+	// Generate metadata
+	if gofakeit.Bool() {
+		v.Metadata = nil
+	} else if gofakeit.Bool() {
+		metadata := "{\"key\":\"value\"}"
+		v.Metadata = &metadata
+	} else {
+		metadata := "null"
+		v.Metadata = &metadata
 	}
 
 	return v, nil
@@ -82,12 +99,6 @@ func Migrate(db *sql.DB) error {
 		v, err := NewFakeUserTable()
 		if err != nil {
 			return err
-		}
-
-		// 50% chance to have partner
-		// NOTE: gofakeit does not support nullable bool
-		if gofakeit.Bool() {
-			v.HasPartner = nil
 		}
 
 		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.Metadata); err != nil {
