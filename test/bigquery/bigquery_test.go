@@ -1,10 +1,16 @@
 package bigquery
 
 import (
-	"cloud.google.com/go/bigquery"
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"math/rand"
+	"os"
+	"testing"
+	"time"
+
+	"cloud.google.com/go/bigquery"
 	"github.com/google/uuid"
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
@@ -13,11 +19,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	"log"
-	"math/rand"
-	"os"
-	"testing"
-	"time"
 )
 
 func init() {
@@ -31,6 +32,19 @@ type UserTable struct {
 	Name      string `json:"name" bigquery:"name"`
 	Age       int    `json:"age" bigquery:"age"`
 	CreatedAt int64  `json:"created_at" bigquery:"created_at"`
+}
+
+type Address struct {
+	Street  string `json:"street" bigquery:"street"`
+	City    string `json:"city" bigquery:"city"`
+	Country string `json:"country" bigquery:"country"`
+}
+
+type UserWithAddress struct {
+	ID        string  `json:"id" bigquery:"id"`
+	Name      string  `json:"name" bigquery:"name"`
+	Address   Address `json:"address" bigquery:"address"`
+	CreatedAt int64   `json:"created_at" bigquery:"created_at"`
 }
 
 var client *bigquery.Client
@@ -165,6 +179,89 @@ out:
 
 		assert.NotEqual(t, "", record.Name)
 		assert.NotEqual(t, 0, record.Age)
+		assert.NotEqual(t, int64(0), record.CreatedAt)
+	}
+}
+
+func Test_output_bigquery_with_record_type(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: random
+  schema:
+    id:
+      type: uuid
+    name:
+      type: name
+    address:
+      type: record
+      fields:
+        street:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+    created_at:
+      type: unixtime
+out:
+  type: bigquery
+  endpoint: %v
+  projectId: test
+  datasetId: dataset1
+  tableId: user_with_address
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    address:
+      type: record
+      fields:
+        street:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+    created_at:
+      type: integer
+`, endpoint)
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	it := client.Dataset("dataset1").Table("user_with_address").Read(context.Background())
+
+	count := 0
+	recordSamples := []UserWithAddress{}
+
+	for {
+		var v UserWithAddress
+		err := it.Next(&v)
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+		if err != nil {
+			t.Errorf("Could not iterate: %s", err)
+		}
+
+		count++
+		if rand.Float32() < 0.1 {
+			recordSamples = append(recordSamples, v)
+		}
+	}
+
+	assert.Equal(t, 100, count)
+
+	for _, record := range recordSamples {
+		_, err := uuid.Parse(record.ID)
+		assert.Nil(t, err)
+
+		assert.NotEqual(t, "", record.Name)
+		assert.NotEqual(t, "", record.Address.Street)
+		assert.NotEqual(t, "", record.Address.City)
+		assert.NotEqual(t, "", record.Address.Country)
 		assert.NotEqual(t, int64(0), record.CreatedAt)
 	}
 }

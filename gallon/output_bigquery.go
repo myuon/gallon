@@ -1,20 +1,21 @@
 package gallon
 
 import (
-	"cloud.google.com/go/bigquery"
 	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-logr/logr"
-	"github.com/google/uuid"
-	"google.golang.org/api/option"
-	"gopkg.in/yaml.v3"
 	"os"
 	"reflect"
 	"strings"
 	"time"
+
+	"cloud.google.com/go/bigquery"
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
+	"google.golang.org/api/option"
+	"gopkg.in/yaml.v3"
 )
 
 type OutputPluginBigQuery struct {
@@ -245,7 +246,8 @@ type OutputPluginBigQueryConfig struct {
 }
 
 type OutputPluginBigQueryConfigSchemaColumn struct {
-	Type string `yaml:"type"`
+	Type   string                                            `yaml:"type"`
+	Fields map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"fields,omitempty"`
 }
 
 func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery, error) {
@@ -265,17 +267,9 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		return nil, err
 	}
 
-	schema := bigquery.Schema{}
-	for name, column := range config.Schema {
-		t, err := getType(column.Type)
-		if err != nil {
-			return nil, err
-		}
-
-		schema = append(schema, &bigquery.FieldSchema{
-			Name: name,
-			Type: t,
-		})
+	schema, err := getSchemaFromConfig(config.Schema)
+	if err != nil {
+		return nil, err
 	}
 
 	deleteTemporaryTable := true
@@ -292,13 +286,46 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		func(item interface{}) ([]bigquery.Value, error) {
 			values := []bigquery.Value{}
 			for _, v := range schema {
-				values = append(values, item.(map[string]interface{})[v.Name])
+				value := item.(map[string]interface{})[v.Name]
+				if v.Type == bigquery.RecordFieldType {
+					if value == nil {
+						values = append(values, nil)
+						continue
+					}
+					recordValue, err := deserializeRecord(value.(map[string]interface{}), v.Schema)
+					if err != nil {
+						return nil, err
+					}
+					values = append(values, recordValue)
+				} else {
+					values = append(values, value)
+				}
 			}
-
 			return values, nil
 		},
 		deleteTemporaryTable,
 	), nil
+}
+
+func deserializeRecord(data map[string]interface{}, schema bigquery.Schema) ([]bigquery.Value, error) {
+	values := []bigquery.Value{}
+	for _, field := range schema {
+		value := data[field.Name]
+		if field.Type == bigquery.RecordFieldType {
+			if value == nil {
+				values = append(values, nil)
+				continue
+			}
+			recordValue, err := deserializeRecord(value.(map[string]interface{}), field.Schema)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, recordValue)
+		} else {
+			values = append(values, value)
+		}
+	}
+	return values, nil
 }
 
 func getType(t string) (bigquery.FieldType, error) {
@@ -318,4 +345,34 @@ func getType(t string) (bigquery.FieldType, error) {
 	}
 
 	return "", errors.New("unknown type: " + t)
+}
+
+func getSchemaFromConfig(config map[string]OutputPluginBigQueryConfigSchemaColumn) (bigquery.Schema, error) {
+	schema := bigquery.Schema{}
+	for name, column := range config {
+		t, err := getType(column.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		field := &bigquery.FieldSchema{
+			Name: name,
+			Type: t,
+		}
+
+		if t == bigquery.RecordFieldType {
+			if column.Fields == nil {
+				return nil, fmt.Errorf("record type field %s must have fields defined", name)
+			}
+			subSchema, err := getSchemaFromConfig(column.Fields)
+			if err != nil {
+				return nil, err
+			}
+			field.Schema = subSchema
+		}
+
+		schema = append(schema, field)
+	}
+
+	return schema, nil
 }
