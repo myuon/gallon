@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -188,6 +189,21 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 		}
 
 		return v, nil
+	case "decimal":
+		// MySQLのdecimal型は[]byteとして返されることがあるため、文字列に変換してからfloat64に変換
+		switch v := value.(type) {
+		case float64:
+			return v, nil
+		case []byte:
+			str := string(v)
+			f, err := strconv.ParseFloat(str, 64)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse decimal: %v", err)
+			}
+			return f, nil
+		default:
+			return nil, fmt.Errorf("value is not decimal: %v", value)
+		}
 	case "bool":
 		v, ok := value.(int64)
 		if !ok {

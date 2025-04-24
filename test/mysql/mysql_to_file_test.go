@@ -33,6 +33,7 @@ type UserTable struct {
 	Birthday   time.Time `json:"birthday"`
 	HasPartner *bool     `json:"hasPartner"`
 	Metadata   *string   `json:"metadata"`
+	Balance    float64   `json:"balance" fake:"{price:0,1000}"`
 }
 
 func NewFakeUserTable() (UserTable, error) {
@@ -78,6 +79,7 @@ func Migrate(db *sql.DB) error {
 		"birthday DATETIME NOT NULL,",
 		"has_partner BOOLEAN,",
 		"metadata JSON,",
+		"balance DECIMAL(10,2) NOT NULL,",
 		"PRIMARY KEY (id)",
 		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 	}, "\n"))
@@ -88,7 +90,7 @@ func Migrate(db *sql.DB) error {
 
 	query, err := conn.PrepareContext(
 		ctx,
-		"INSERT INTO users (id, name, age, created_at, birthday, has_partner, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO users (id, name, age, created_at, birthday, has_partner, metadata, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return err
@@ -101,7 +103,7 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 
-		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.Metadata); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.Metadata, v.Balance); err != nil {
 			return err
 		}
 	}
@@ -215,6 +217,8 @@ in:
       type: bool
     metadata:
       type: json
+    balance:
+      type: decimal
 out:
   type: file
   filepath: ./output.jsonl
