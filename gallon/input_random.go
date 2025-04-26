@@ -71,10 +71,11 @@ type InputPluginRandomConfig struct {
 }
 
 type InputPluginRandomConfigSchemaColumn struct {
-	Type   string  `yaml:"type"`
-	Min    *int    `yaml:"min"`
-	Max    *int    `yaml:"max"`
-	Format *string `yaml:"format"`
+	Type   string                                         `yaml:"type"`
+	Min    *int                                           `yaml:"min"`
+	Max    *int                                           `yaml:"max"`
+	Format *string                                        `yaml:"format"`
+	Fields map[string]InputPluginRandomConfigSchemaColumn `yaml:"fields"`
 }
 
 func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (any, error) {
@@ -109,6 +110,16 @@ func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (any, erro
 		return gofakeit.Date().String(), nil
 	case "unixtime":
 		return gofakeit.Date().Unix(), nil
+	case "record":
+		record := map[string]any{}
+		for k, v := range c.Fields {
+			value, err := v.generateValue(index)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate field %s: %v", k, err)
+			}
+			record[k] = value
+		}
+		return record, nil
 	default:
 		return nil, fmt.Errorf("unknown column type: %v", c.Type)
 	}
