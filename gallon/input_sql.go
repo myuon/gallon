@@ -205,15 +205,14 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 			return nil, fmt.Errorf("value is not decimal: %v", value)
 		}
 	case "bool":
-		v, ok := value.(int64)
-		if !ok {
+		// MySQLのtinyint(1)はint64として返されることがあるため、0/1の判定を行う
+		switch v := value.(type) {
+		case int64:
+			return v != 0, nil
+		case bool:
+			return v, nil
+		default:
 			return nil, fmt.Errorf("value is not bool: %v", value)
-		}
-
-		if v == 0 {
-			return false, nil
-		} else {
-			return true, nil
 		}
 	case "time":
 		// when parseTime not specified, mysql returns []byte
