@@ -1,4 +1,4 @@
-package mysql
+package parse_time_false
 
 import (
 	"context"
@@ -165,7 +165,7 @@ func TestMain(m *testing.M) {
 
 		log.Println("Purged resource")
 	}()
-	databaseUrl = fmt.Sprintf("root:root@tcp(localhost:%v)/test?parseTime=true&loc=Asia%%2FTokyo", port)
+	databaseUrl = fmt.Sprintf("root:root@tcp(localhost:%v)/test?parseTime=false&loc=Asia%%2FTokyo", port)
 
 	if err = pool.Retry(func() error {
 		log.Println("Trying to connect to database...")
@@ -197,7 +197,7 @@ func TestMain(m *testing.M) {
 	log.Println("Tests finished")
 }
 
-func Test_mysql_to_file(t *testing.T) {
+func Test_mysql_to_file_parse_time_false(t *testing.T) {
 	configYml := fmt.Sprintf(`
 in:
   type: sql
@@ -223,11 +223,11 @@ in:
       type: decimal
 out:
   type: file
-  filepath: ./output.jsonl
+  filepath: ./output_parse_time_false.jsonl
   format: jsonl
 `, databaseUrl)
 	defer func() {
-		if err := os.Remove("./output.jsonl"); err != nil {
+		if err := os.Remove("./output_parse_time_false.jsonl"); err != nil {
 			t.Errorf("Could not remove output file: %s", err)
 		}
 	}()
@@ -236,7 +236,7 @@ out:
 		t.Errorf("Could not run command: %s", err)
 	}
 
-	jsonl, err := os.ReadFile("./output.jsonl")
+	jsonl, err := os.ReadFile("./output_parse_time_false.jsonl")
 	if err != nil {
 		t.Errorf("Could not read output file: %s", err)
 	}

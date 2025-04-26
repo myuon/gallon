@@ -216,6 +216,18 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 			return true, nil
 		}
 	case "time":
+		// when parseTime not specified, mysql returns []byte
+		b, ok := value.([]byte)
+		if ok {
+			// This format is tested with mysql 8.0
+			v, err := time.Parse("2006-01-02 15:04:05", string(b))
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse time: %v", err)
+			}
+
+			return v, nil
+		}
+
 		v, ok := value.(time.Time)
 		if !ok {
 			return nil, fmt.Errorf("value is not time: %v", value)
