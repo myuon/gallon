@@ -150,13 +150,28 @@ in:
       type: number
     created_at:
       type: number
+    profile:
+      type: object
+      properties:
+        email:
+          type: string
+        address:
+          type: string
+    tags:
+      type: array
+      items:
+        type: string
+    metadata:
+      type: any
 ```
 
 - region: Your AWS Region
 - table: Your DynamoDB Table name
 - endpoint: for dynamodb-local (optional)
 - schema
-  - type: `string`, `number`, `boolean` are supported
+  - type: `string`, `number`, `boolean`, `object`, `array`, `any` are supported
+  - properties: for `object` type, define nested fields
+  - items: for `array` type, define item type
 
 ### SQL(RDB) Input Plugin
 
@@ -179,13 +194,17 @@ in:
       type: time
     has_partner:
       type: bool
+    balance:
+      type: decimal
+    preferences:
+      type: json
 ```
 
 - driver: `mysql`, `postgres` are supported
 - table: Table name
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
 - schema
-  - type: `string`, `int`, `float`, `time`, `bool` are supported. NULL are always acceptable.
+  - type: `string`, `int`, `float`, `decimal`, `time`, `bool`, `json` are supported. NULL are always acceptable.
 
 ### Random Input Plugin
 
@@ -210,14 +229,22 @@ in:
       format: rfc3339
     created_at:
       type: unixtime
+    profile:
+      type: record
+      fields:
+        bio:
+          type: string
+        website:
+          type: url
 ```
 
 - pageLimit: Number of pages (optional, default: 10)
 - pageSize: Number of records per page (optional, default: 10)
 - schema
-  - type: `string`, `int`, `float`, `bool`, `name`, `url`, `email`, `uuid`, `time`, `unixtime` (int64) are supported.
+  - type: `string`, `int`, `float`, `bool`, `name`, `url`, `email`, `uuid`, `time`, `unixtime`, `record` are supported.
   - min, max: for `int` type (optional)
   - format: for `time` type. Specify `rfc3339`, or it returns `YYYY-MM-DD` date string. (optional)
+  - fields: for `record` type, define nested fields
 
 ### BigQuery Output Plugin
 
@@ -238,6 +265,13 @@ out:
       type: integer
     created_at:
       type: integer
+    profile:
+      type: record
+      fields:
+        email:
+          type: string
+        address:
+          type: string
   deleteTemporaryTable: true
 ```
 
@@ -248,16 +282,17 @@ out:
 - endpoint: for bigquery-emulator (optional)
 - schema
   - type: `string`, `integer`, `float`, `boolean`, `timestamp`, `record` are supported
+  - fields: for `record` type, define nested fields
 - deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
 
 ### File Output Plugin
 
 ```yaml
 out:
-    type: file
-    filepath: /tmp/users.csv
-    format: csv
-````
+  type: file
+  filepath: /tmp/users.csv
+  format: csv
+```
 
 - filepath: File path
-- format: `csv`, `json` are supported
+- format: `csv`, `jsonl` are supported
