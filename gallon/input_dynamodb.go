@@ -3,6 +3,7 @@ package gallon
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -176,6 +177,45 @@ func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) 
 		}
 
 		return result, nil
+	case "any":
+		if v == nil {
+			return nil, nil
+		}
+
+		switch v := v.(type) {
+		case *types.AttributeValueMemberS:
+			return v.Value, nil
+		case *types.AttributeValueMemberN:
+			return strconv.ParseFloat(v.Value, 64)
+		case *types.AttributeValueMemberBOOL:
+			return v.Value, nil
+		case *types.AttributeValueMemberNULL:
+			return nil, nil
+		case *types.AttributeValueMemberM:
+			result := map[string]any{}
+			anySchema := InputPluginDynamoDbConfigSchemaColumn{Type: "any"}
+			for k, v := range v.Value {
+				val, err := anySchema.getValue(v)
+				if err != nil {
+					return nil, err
+				}
+				result[k] = val
+			}
+			return result, nil
+		case *types.AttributeValueMemberL:
+			result := []any{}
+			anySchema := InputPluginDynamoDbConfigSchemaColumn{Type: "any"}
+			for _, item := range v.Value {
+				val, err := anySchema.getValue(item)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, val)
+			}
+			return result, nil
+		default:
+			return nil, fmt.Errorf("unsupported type: %T", v)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported type: %v", c.Type)
 	}

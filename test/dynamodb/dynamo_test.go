@@ -48,6 +48,11 @@ type Skill struct {
 	Category string `json:"category" fake:"{word}"`
 }
 
+type HeterogeneousData struct {
+	ID     string        `json:"id"`
+	Values []interface{} `json:"values"`
+}
+
 var client *dynamodb.Client
 var endpoint string
 
@@ -349,5 +354,192 @@ out:
 				t.Errorf("Expected skill.category to be string, got %T", skillMap["category"])
 			}
 		}
+	}
+}
+
+func TestHeterogeneousList(t *testing.T) {
+	// Prepare test data
+	tableName := "heterogeneous_data"
+	ctx := context.Background()
+
+	// Create table
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("id"),
+				AttributeType: types.ScalarAttributeTypeS,
+			},
+		},
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("id"),
+				KeyType:       types.KeyTypeHash,
+			},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create table: %v", err)
+	}
+
+	// Create test data
+	testData := HeterogeneousData{
+		ID: "test1",
+		Values: []any{
+			map[string]any{
+				"type": "object",
+				"data": map[string]any{
+					"name":  "test object",
+					"value": 42,
+				},
+			},
+			123,
+			true,
+			"string value",
+			map[string]any{
+				"type": "nested",
+				"items": []any{
+					"item1",
+					456,
+					map[string]any{
+						"key": "value",
+					},
+				},
+			},
+		},
+	}
+
+	// Insert data into DynamoDB
+	item := map[string]types.AttributeValue{
+		"id": &types.AttributeValueMemberS{Value: testData.ID},
+		"values": &types.AttributeValueMemberL{
+			Value: []types.AttributeValue{
+				&types.AttributeValueMemberM{
+					Value: map[string]types.AttributeValue{
+						"type": &types.AttributeValueMemberS{Value: "object"},
+						"data": &types.AttributeValueMemberM{
+							Value: map[string]types.AttributeValue{
+								"name":  &types.AttributeValueMemberS{Value: "test object"},
+								"value": &types.AttributeValueMemberN{Value: "42"},
+							},
+						},
+					},
+				},
+				&types.AttributeValueMemberN{Value: "123"},
+				&types.AttributeValueMemberBOOL{Value: true},
+				&types.AttributeValueMemberS{Value: "string value"},
+				&types.AttributeValueMemberM{
+					Value: map[string]types.AttributeValue{
+						"type": &types.AttributeValueMemberS{Value: "nested"},
+						"items": &types.AttributeValueMemberL{
+							Value: []types.AttributeValue{
+								&types.AttributeValueMemberS{Value: "item1"},
+								&types.AttributeValueMemberN{Value: "456"},
+								&types.AttributeValueMemberM{
+									Value: map[string]types.AttributeValue{
+										"key": &types.AttributeValueMemberS{Value: "value"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      item,
+	})
+	if err != nil {
+		t.Fatalf("Failed to insert data: %v", err)
+	}
+
+	// Prepare configuration
+	configYml := fmt.Sprintf(`
+in:
+  type: dynamodb
+  table: %s
+  endpoint: %v
+  schema:
+    id:
+      type: string
+    values:
+      type: any
+out:
+  type: file
+  filepath: ./heterogeneous_output.jsonl
+  format: jsonl
+`, tableName, endpoint)
+
+	defer func() {
+		if err := os.Remove("./heterogeneous_output.jsonl"); err != nil {
+			t.Errorf("Failed to remove output file: %s", err)
+		}
+	}()
+
+	// Run Gallon
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Fatalf("Failed to run Gallon: %s", err)
+	}
+
+	// Validate output file
+	jsonl, err := os.ReadFile("./heterogeneous_output.jsonl")
+	if err != nil {
+		t.Fatalf("Failed to read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) != 2 { // 1 record + empty line
+		t.Fatalf("Expected 2 lines, got %d", len(lines))
+	}
+
+	var outputData HeterogeneousData
+	if err := json.Unmarshal([]byte(lines[0]), &outputData); err != nil {
+		t.Fatalf("Failed to parse JSON: %s", err)
+	}
+
+	// Validate data
+	if outputData.ID != testData.ID {
+		t.Errorf("ID mismatch: expected=%s, got=%s", testData.ID, outputData.ID)
+	}
+
+	if len(outputData.Values) != len(testData.Values) {
+		t.Errorf("Values length mismatch: expected=%d, got=%d", len(testData.Values), len(outputData.Values))
+	}
+
+	// Validate first object
+	firstObj, ok := outputData.Values[0].(map[string]any)
+	if !ok {
+		t.Error("First element is not an object")
+	}
+	if firstObj["type"] != "object" {
+		t.Errorf("First element type mismatch: expected=object, got=%v", firstObj["type"])
+	}
+
+	// Validate number
+	if outputData.Values[1] != float64(123) {
+		t.Errorf("Second element mismatch: expected=123, got=%v", outputData.Values[1])
+	}
+
+	// Validate boolean
+	if outputData.Values[2] != true {
+		t.Errorf("Third element mismatch: expected=true, got=%v", outputData.Values[2])
+	}
+
+	// Validate string
+	if outputData.Values[3] != "string value" {
+		t.Errorf("Fourth element mismatch: expected=string value, got=%v", outputData.Values[3])
+	}
+
+	// Validate nested object
+	nestedObj, ok := outputData.Values[4].(map[string]any)
+	if !ok {
+		t.Error("Fifth element is not an object")
+	}
+	if nestedObj["type"] != "nested" {
+		t.Errorf("Fifth element type mismatch: expected=nested, got=%v", nestedObj["type"])
 	}
 }
