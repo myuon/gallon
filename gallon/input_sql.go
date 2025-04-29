@@ -205,12 +205,18 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 			return nil, fmt.Errorf("value is not decimal: %v", value)
 		}
 	case "bool":
-		// MySQLのtinyint(1)はint64として返されることがあるため、0/1の判定を行う
 		switch v := value.(type) {
-		case int64:
-			return v != 0, nil
 		case bool:
 			return v, nil
+		case int64:
+			// tinyint(1)
+			return v != 0, nil
+		case []byte:
+			if len(v) == 1 {
+				// bit(1)
+				return v[0] != 0, nil
+			}
+			return nil, fmt.Errorf("value is not bool: %v", value)
 		default:
 			return nil, fmt.Errorf("value is not bool: %v", value)
 		}

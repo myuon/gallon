@@ -34,6 +34,7 @@ type UserTable struct {
 	Birthday   time.Time `json:"birthday"`
 	HasPartner *bool     `json:"hasPartner"`
 	IsActive   int       `json:"isActive" fake:"{number:0,1}"`
+	IsPremium  int       `json:"isPremium" fake:"{number:0,1}"`
 	Metadata   *string   `json:"metadata"`
 	Balance    float64   `json:"balance" fake:"{price:0,1000}"`
 }
@@ -82,7 +83,8 @@ func Migrate(db *sql.DB) error {
 		"created_at INT NOT NULL,",
 		"birthday DATETIME NOT NULL,",
 		"has_partner BOOLEAN,",
-		"is_active TINYINT(1) NOT NULL,",
+		"is_active BIT(1) NOT NULL,",
+		"is_premium TINYINT(1) NOT NULL,",
 		"metadata JSON,",
 		"balance DECIMAL(10,2) NOT NULL,",
 		"PRIMARY KEY (id)",
@@ -95,7 +97,7 @@ func Migrate(db *sql.DB) error {
 
 	query, err := conn.PrepareContext(
 		ctx,
-		"INSERT INTO users (id, name, age, created_at, birthday, has_partner, is_active, metadata, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO users (id, name, age, created_at, birthday, has_partner, is_active, is_premium, metadata, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return err
@@ -108,7 +110,7 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 
-		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.IsActive, v.Metadata, v.Balance); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.IsActive, v.IsPremium, v.Metadata, v.Balance); err != nil {
 			return err
 		}
 	}
@@ -318,6 +320,156 @@ out:
 
 		if _, ok := record["is_active"].(bool); !ok {
 			t.Errorf("is_active is not bool in line %d: %v", i, record["is_active"])
+		}
+	}
+}
+
+func Test_mysql_to_file_with_bit(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  table: users
+  database_url: %v
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: int
+    created_at:
+      type: int
+    birthday:
+      type: time
+    has_partner:
+      type: bool
+    is_active:
+      type: bool
+    metadata:
+      type: json
+    balance:
+      type: decimal
+out:
+  type: file
+  filepath: ./output_bit.jsonl
+  format: jsonl
+`, databaseUrl)
+	defer func() {
+		if err := os.Remove("./output_bit.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_bit.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) > 10 {
+		lines = lines[:10]
+	}
+	fmt.Printf("%v\n", strings.Join(lines, "\n"))
+
+	if strings.Count(string(jsonl), "\n") != 1000 {
+		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
+	}
+
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Errorf("Failed to parse line %d: %v", i, err)
+			continue
+		}
+
+		if _, ok := record["is_active"].(bool); !ok {
+			t.Errorf("is_active is not bool in line %d: %v", i, record["is_active"])
+		}
+	}
+}
+
+func Test_mysql_to_file_with_bool_types(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  table: users
+  database_url: %v
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: int
+    created_at:
+      type: int
+    birthday:
+      type: time
+    has_partner:
+      type: bool
+    is_active:
+      type: bool
+    is_premium:
+      type: bool
+    metadata:
+      type: json
+    balance:
+      type: decimal
+out:
+  type: file
+  filepath: ./output_bool_types.jsonl
+  format: jsonl
+`, databaseUrl)
+	defer func() {
+		if err := os.Remove("./output_bool_types.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_bool_types.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) > 10 {
+		lines = lines[:10]
+	}
+	fmt.Printf("%v\n", strings.Join(lines, "\n"))
+
+	if strings.Count(string(jsonl), "\n") != 1000 {
+		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
+	}
+
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Errorf("Failed to parse line %d: %v", i, err)
+			continue
+		}
+
+		if _, ok := record["is_active"].(bool); !ok {
+			t.Errorf("is_active is not bool in line %d: %v", i, record["is_active"])
+		}
+
+		if _, ok := record["is_premium"].(bool); !ok {
+			t.Errorf("is_premium is not bool in line %d: %v", i, record["is_premium"])
 		}
 	}
 }
