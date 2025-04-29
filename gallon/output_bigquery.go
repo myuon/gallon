@@ -342,6 +342,8 @@ func getType(t string) (bigquery.FieldType, error) {
 		return bigquery.TimestampFieldType, nil
 	case "RECORD":
 		return bigquery.RecordFieldType, nil
+	case "JSON":
+		return bigquery.JSONFieldType, nil
 	}
 
 	return "", errors.New("unknown type: " + t)
