@@ -207,7 +207,7 @@ loop:
 		return fmt.Errorf("failed to wait for job: %v", err)
 	}
 	if err := status.Err(); err != nil {
-		return fmt.Errorf("job failed: %v", err)
+		return fmt.Errorf("job failed: %v (details: %v)", err, status.Errors)
 	}
 
 	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
