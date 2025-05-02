@@ -297,6 +297,19 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 						return nil, err
 					}
 					values = append(values, recordValue)
+				} else if v.Type == bigquery.StringFieldType {
+					// If the field is a string, and the value is a JSON object, we need to deserialize it
+					switch value.(type) {
+					case string:
+						values = append(values, value)
+					default:
+						jsonBytes, err := json.Marshal(value)
+						if err != nil {
+							return nil, err
+						}
+
+						values = append(values, string(jsonBytes))
+					}
 				} else {
 					values = append(values, value)
 				}
@@ -321,19 +334,6 @@ func deserializeRecord(data map[string]any, schema bigquery.Schema) ([]bigquery.
 				return nil, err
 			}
 			values = append(values, recordValue)
-		} else if field.Type == bigquery.StringFieldType {
-			// If the field is a string, and the value is a JSON object, we need to deserialize it
-			switch value.(type) {
-			case string:
-				values = append(values, value)
-			default:
-				jsonBytes, err := json.Marshal(value)
-				if err != nil {
-					return nil, err
-				}
-
-				values = append(values, string(jsonBytes))
-			}
 		} else {
 			values = append(values, value)
 		}
