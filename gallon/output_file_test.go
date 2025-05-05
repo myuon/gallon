@@ -44,31 +44,29 @@ header: true
 		return NewNopWriteCloser(writer), nil
 	}
 
+	r1 := NewGallonRecord()
+	r1.Set("id", "1")
+	r1.Set("name", "foo")
+	r1.Set("age", 20)
+	r1.Set("created_at", 1234567890)
+
+	r2 := NewGallonRecord()
+	r2.Set("id", "2")
+	r2.Set("name", "bar")
+	r2.Set("age", 30)
+	r2.Set("created_at", 1234567890)
+
+	r3 := NewGallonRecord()
+	r3.Set("id", "3")
+	r3.Set("name", "baz")
+	r3.Set("age", 40)
+	r3.Set("created_at", 1234567890)
+
 	g := Gallon{
 		Logger: logger,
-		Input: NewInputPluginStub([][]map[string]any{
-			{
-				{
-					"id":         "1",
-					"name":       "foo",
-					"age":        20,
-					"created_at": 1234567890,
-				},
-				{
-					"id":         "2",
-					"name":       "bar",
-					"age":        30,
-					"created_at": 1234567890,
-				},
-			},
-			{
-				{
-					"id":         "3",
-					"name":       "baz",
-					"age":        40,
-					"created_at": 1234567890,
-				},
-			},
+		Input: NewInputPluginStub([][]GallonRecord{
+			{r1, r2},
+			{r3},
 		}),
 		Output: plugin,
 	}
@@ -76,9 +74,9 @@ header: true
 		t.Errorf("Could not run command: %s", err)
 	}
 
-	expected := `20,1234567890,1,foo
-30,1234567890,2,bar
-40,1234567890,3,baz
+	expected := `1,foo,20,1234567890
+2,bar,30,1234567890
+3,baz,40,1234567890
 `
 
 	assert.Equal(t, expected, buf.String())

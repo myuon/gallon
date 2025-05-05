@@ -10,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,13 +18,13 @@ type InputPluginRandom struct {
 	logger    logr.Logger
 	pageSize  int
 	pageLimit int
-	generate  func(int) (any, error)
+	generate  func(int) (GallonRecord, error)
 }
 
 func NewInputPluginRandom(
 	pageSize int,
 	pageLimit int,
-	generate func(int) (any, error),
+	generate func(int) (GallonRecord, error),
 ) *InputPluginRandom {
 	return &InputPluginRandom{
 		pageSize:  pageSize,
@@ -40,11 +41,11 @@ func (p *InputPluginRandom) ReplaceLogger(logger logr.Logger) {
 
 func (p *InputPluginRandom) Extract(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	for i := 0; i < p.pageLimit; i++ {
-		records := []any{}
+		records := []GallonRecord{}
 
 		for j := 0; j < p.pageSize; j++ {
 			record, err := p.generate(i)
@@ -65,17 +66,17 @@ func (p *InputPluginRandom) Extract(
 }
 
 type InputPluginRandomConfig struct {
-	PageSize  int                                            `yaml:"pageSize"`
-	PageLimit int                                            `yaml:"pageLimit"`
-	Schema    map[string]InputPluginRandomConfigSchemaColumn `yaml:"schema"`
+	PageSize  int                                                                `yaml:"pageSize"`
+	PageLimit int                                                                `yaml:"pageLimit"`
+	Schema    orderedmap.OrderedMap[string, InputPluginRandomConfigSchemaColumn] `yaml:"schema"`
 }
 
 type InputPluginRandomConfigSchemaColumn struct {
-	Type   string                                         `yaml:"type"`
-	Min    *int                                           `yaml:"min"`
-	Max    *int                                           `yaml:"max"`
-	Format *string                                        `yaml:"format"`
-	Fields map[string]InputPluginRandomConfigSchemaColumn `yaml:"fields"`
+	Type   string                                                             `yaml:"type"`
+	Min    *int                                                               `yaml:"min"`
+	Max    *int                                                               `yaml:"max"`
+	Format *string                                                            `yaml:"format"`
+	Fields orderedmap.OrderedMap[string, InputPluginRandomConfigSchemaColumn] `yaml:"fields"`
 }
 
 func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (any, error) {
@@ -111,15 +112,15 @@ func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (any, erro
 	case "unixtime":
 		return gofakeit.Date().Unix(), nil
 	case "record":
-		record := map[string]any{}
-		for k, v := range c.Fields {
-			value, err := v.generateValue(index)
+		fields := orderedmap.New[string, any]()
+		for pair := c.Fields.Oldest(); pair != nil; pair = pair.Next() {
+			value, err := pair.Value.generateValue(index)
 			if err != nil {
-				return nil, fmt.Errorf("failed to generate field %s: %v", k, err)
+				return nil, fmt.Errorf("failed to generate field %s: %v", pair.Key, err)
 			}
-			record[k] = value
+			fields.Set(pair.Key, value)
 		}
-		return record, nil
+		return fields, nil
 	default:
 		return nil, fmt.Errorf("unknown column type: %v", c.Type)
 	}
@@ -141,16 +142,16 @@ func NewInputPluginRandomFromConfig(configYml []byte) (*InputPluginRandom, error
 	return NewInputPluginRandom(
 		config.PageSize,
 		config.PageLimit,
-		func(index int) (any, error) {
-			record := map[string]any{}
+		func(index int) (GallonRecord, error) {
+			record := NewGallonRecord()
 
-			for k, v := range config.Schema {
-				value, err := v.generateValue(index)
+			for pair := config.Schema.Oldest(); pair != nil; pair = pair.Next() {
+				value, err := pair.Value.generateValue(index)
 				if err != nil {
-					return nil, errors.Join(err, fmt.Errorf("failed to get value for column: %v", k))
+					return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to get value for column: %v", pair.Key))
 				}
 
-				record[k] = value
+				record.Set(pair.Key, value)
 			}
 
 			return record, nil

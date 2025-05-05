@@ -18,13 +18,13 @@ type InputPluginDynamoDb struct {
 	logger    logr.Logger
 	client    *dynamodb.Client
 	tableName string
-	serialize func(map[string]types.AttributeValue) (any, error)
+	serialize func(map[string]types.AttributeValue) (GallonRecord, error)
 }
 
 func NewInputPluginDynamoDb(
 	client *dynamodb.Client,
 	tableName string,
-	serialize func(map[string]types.AttributeValue) (any, error),
+	serialize func(map[string]types.AttributeValue) (GallonRecord, error),
 ) *InputPluginDynamoDb {
 	return &InputPluginDynamoDb{
 		client:    client,
@@ -41,7 +41,7 @@ func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
 
 func (p *InputPluginDynamoDb) Extract(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	hasNext := true
@@ -75,7 +75,7 @@ loop:
 				hasNext = false
 			}
 
-			var msgs []any
+			var msgs []GallonRecord
 			for _, item := range resp.Items {
 				record, err := p.serialize(item)
 				if err != nil {
@@ -255,8 +255,8 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 	return NewInputPluginDynamoDb(
 		client,
 		dbConfig.Table,
-		func(item map[string]types.AttributeValue) (any, error) {
-			record := map[string]any{}
+		func(item map[string]types.AttributeValue) (GallonRecord, error) {
+			record := NewGallonRecord()
 
 			for k, v := range item {
 				schema, ok := dbConfig.Schema[k]
@@ -266,10 +266,10 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 
 				value, err := schema.getValue(v)
 				if err != nil {
-					return nil, err
+					return GallonRecord{}, err
 				}
 
-				record[k] = value
+				record.Set(k, value)
 			}
 
 			return record, nil

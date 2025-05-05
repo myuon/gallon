@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
 )
@@ -25,7 +25,7 @@ type OutputPluginBigQuery struct {
 	datasetId            string
 	tableId              string
 	schema               bigquery.Schema
-	deserialize          func(any) ([]bigquery.Value, error)
+	deserialize          func(GallonRecord) ([]bigquery.Value, error)
 	deleteTemporaryTable bool
 }
 
@@ -35,7 +35,7 @@ func NewOutputPluginBigQuery(
 	datasetId string,
 	tableId string,
 	schema bigquery.Schema,
-	deserialize func(any) ([]bigquery.Value, error),
+	deserialize func(GallonRecord) ([]bigquery.Value, error),
 	deleteTemporaryTable bool,
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
@@ -83,7 +83,7 @@ func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, table
 
 func (p *OutputPluginBigQuery) Load(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
@@ -136,22 +136,16 @@ loop:
 				break loop
 			}
 
-			msgsSlice, ok := msgs.([]any)
-			if !ok {
-				errs <- fmt.Errorf("unexpected type: %T", reflect.TypeOf(msgs))
-				continue
-			}
-
-			for _, msg := range msgsSlice {
+			for _, msg := range msgs {
 				values, err := p.deserialize(msg)
 				if err != nil {
 					errs <- fmt.Errorf("failed to deserialize: %v, %v", msg, err)
 					continue
 				}
 
-				mp := map[string]any{}
+				mp := orderedmap.New[string, any]()
 				for i, v := range p.schema {
-					mp[v.Name] = values[i]
+					mp.Set(v.Name, values[i])
 				}
 
 				if err := temporaryFileWriter.Encode(mp); err != nil {
@@ -160,8 +154,8 @@ loop:
 				}
 			}
 
-			if len(msgsSlice) > 0 {
-				loadedTotal += len(msgsSlice)
+			if len(msgs) > 0 {
+				loadedTotal += len(msgs)
 				p.logger.Info(fmt.Sprintf("loaded %v rows", loadedTotal))
 			}
 		}
@@ -283,10 +277,15 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		config.DatasetId,
 		config.TableId,
 		schema,
-		func(item any) ([]bigquery.Value, error) {
+		func(item GallonRecord) ([]bigquery.Value, error) {
 			values := []bigquery.Value{}
 			for _, v := range schema {
-				value := item.(map[string]any)[v.Name]
+				value, ok := item.Get(v.Name)
+				if !ok {
+					values = append(values, nil)
+					continue
+				}
+
 				if v.Type == bigquery.RecordFieldType {
 					if value == nil {
 						values = append(values, nil)

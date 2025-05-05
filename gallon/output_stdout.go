@@ -11,11 +11,11 @@ import (
 
 type OutputPluginStdout struct {
 	logger      logr.Logger
-	deserialize func(any) ([]byte, error)
+	deserialize func(GallonRecord) ([]byte, error)
 }
 
 func NewOutputPluginStdout(
-	deserialize func(any) ([]byte, error),
+	deserialize func(GallonRecord) ([]byte, error),
 ) *OutputPluginStdout {
 	return &OutputPluginStdout{
 		deserialize: deserialize,
@@ -30,7 +30,7 @@ func (p *OutputPluginStdout) ReplaceLogger(logger logr.Logger) {
 
 func (p *OutputPluginStdout) Load(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	loadedTotal := 0
@@ -46,9 +46,7 @@ loop:
 				break loop
 			}
 
-			msgSlice := msgs.([]any)
-
-			for _, msg := range msgSlice {
+			for _, msg := range msgs {
 				bs, err := p.deserialize(msg)
 				if err != nil {
 					errs <- fmt.Errorf("failed to deserialize message: %v (error: %w)", msg, err)
@@ -58,8 +56,8 @@ loop:
 				p.logger.Info(string(bs))
 			}
 
-			if len(msgSlice) > 0 {
-				loadedTotal += len(msgSlice)
+			if len(msgs) > 0 {
+				loadedTotal += len(msgs)
 				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
 			}
 		}
@@ -82,7 +80,7 @@ func NewOutputPluginStdoutFromConfig(configYml []byte) (*OutputPluginStdout, err
 	}
 
 	return NewOutputPluginStdout(
-		func(msg any) ([]byte, error) {
+		func(msg GallonRecord) ([]byte, error) {
 			if config.Format == "json" {
 				return json.Marshal(msg)
 			} else {
