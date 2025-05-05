@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -30,26 +31,46 @@ var RunCmd = &cobra.Command{
 	Short: "Run a migration",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		configFile := args[0]
+		configPath := args[0]
 
-		configFileBody, err := os.ReadFile(configFile)
-		if err != nil {
-			zap.S().Error(err)
-		}
-
-		opts := RunGallonOptions{
+		if err := RunGallonWithPath(configPath, RunGallonOptions{
 			AsTemplate: withTemplate || withTemplateWithEnv,
 			WithEnv:    withTemplateWithEnv,
-		}
-
-		if err := RunGallonWithOptions(configFileBody, opts); err != nil {
+		}); err != nil {
 			zap.S().Error(err)
+			return
 		}
 	},
 }
 
 type WithTypeConfig struct {
 	Type string `yaml:"type"`
+}
+
+// RunGallonWithPath runs a migration with the given config file path.
+// You can use glob pattern to run multiple config files.
+func RunGallonWithPath(configPath string, opts RunGallonOptions) error {
+	files, err := filepath.Glob(configPath)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		zap.S().Infow("RunGallon", "path", file)
+
+		configFileBody, err := os.ReadFile(file)
+		if err != nil {
+			zap.S().Errorw("Failed to read config file", "path", file, "error", err)
+			continue
+		}
+
+		if err := RunGallonWithOptions(configFileBody, opts); err != nil {
+			zap.S().Errorw("Failed to run gallon", "path", file, "error", err)
+			continue
+		}
+	}
+
+	return nil
 }
 
 type RunGallonOptions struct {

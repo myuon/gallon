@@ -211,8 +211,11 @@ in:
 ```
 
 - driver: `mysql`, `postgres` are supported
+  - For MySQL, [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) is used.
+  - For PostgreSQL, [lib/pq](https://github.com/lib/pq) is used.
 - table: Table name
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
+  - For MySQL, it should be `user:password@tcp(host:port)/dbname` (See: [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#dsn-data-source-name))
 - schema
   - type: `string`, `int`, `float`, `decimal`, `time`, `bool`, `json` are supported. NULL are always acceptable.
   - format: for `time` type. Specify time format string in [Go time layout](https://pkg.go.dev/time#Layout). Default is `2006-01-02 15:04:05`. (optional)
