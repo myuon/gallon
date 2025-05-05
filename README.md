@@ -282,6 +282,7 @@ out:
 - endpoint: for bigquery-emulator (optional)
 - schema
   - type: `string`, `integer`, `float`, `boolean`, `timestamp`, `record` are supported
+    - If non-string value is passed while `string` is specified, the value will be serialized using `json.Marshal`
   - fields: for `record` type, define nested fields
 - deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
 

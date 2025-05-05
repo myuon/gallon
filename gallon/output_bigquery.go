@@ -207,7 +207,7 @@ loop:
 		return fmt.Errorf("failed to wait for job: %v", err)
 	}
 	if err := status.Err(); err != nil {
-		return fmt.Errorf("job failed: %v", err)
+		return fmt.Errorf("job failed: %v (details: %v)", err, status.Errors)
 	}
 
 	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
@@ -297,6 +297,19 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 						return nil, err
 					}
 					values = append(values, recordValue)
+				} else if v.Type == bigquery.StringFieldType {
+					// If the field is a string, and the value is a JSON object, we need to deserialize it
+					switch value.(type) {
+					case string:
+						values = append(values, value)
+					default:
+						jsonBytes, err := json.Marshal(value)
+						if err != nil {
+							return nil, err
+						}
+
+						values = append(values, string(jsonBytes))
+					}
 				} else {
 					values = append(values, value)
 				}
