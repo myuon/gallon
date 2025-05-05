@@ -277,18 +277,18 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 		func(item map[string]any) (any, error) {
 			record := map[string]any{}
 
-			for k, v := range item {
-				schema, ok := dbConfig.Schema[k]
+			for k, column := range dbConfig.Schema {
+				value, ok := item[k]
 				if !ok {
 					continue
 				}
 
-				value, err := schema.getValue(v)
+				v, err := column.getValue(value)
 				if err != nil {
 					return nil, errors.Join(err, fmt.Errorf("failed to get value for column: %v", k))
 				}
 
-				record[k] = value
+				record[k] = v
 			}
 
 			return record, nil
