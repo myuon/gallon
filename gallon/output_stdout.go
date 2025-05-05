@@ -49,7 +49,7 @@ loop:
 			for _, msg := range msgs {
 				bs, err := p.deserialize(msg)
 				if err != nil {
-					errs <- fmt.Errorf("failed to deserialize message: %v (error: %w)", msg, err)
+					errs <- fmt.Errorf("failed to deserialize message: %v (error: %v)", msg, err)
 					continue
 				}
 
@@ -73,16 +73,17 @@ type OutputPluginStdoutConfig struct {
 }
 
 func NewOutputPluginStdoutFromConfig(configYml []byte) (*OutputPluginStdout, error) {
-	var config OutputPluginStdoutConfig
-
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var outConfig GallonConfig[any, OutputPluginStdoutConfig]
+	if err := yaml.Unmarshal(configYml, &outConfig); err != nil {
 		return nil, err
 	}
+
+	config := outConfig.Out
 
 	return NewOutputPluginStdout(
 		func(msg GallonRecord) ([]byte, error) {
 			if config.Format == "json" {
-				return json.Marshal(msg)
+				return json.Marshal(&msg)
 			} else {
 				return []byte(fmt.Sprintf("%v", msg)), nil
 			}

@@ -94,10 +94,12 @@ type OutputPluginFileConfig struct {
 }
 
 func NewOutputPluginFileFromConfig(configYml []byte) (*OutputPluginFile, error) {
-	config := OutputPluginFileConfig{}
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var outConfig GallonConfig[any, OutputPluginFileConfig]
+	if err := yaml.Unmarshal(configYml, &outConfig); err != nil {
 		return nil, err
 	}
+
+	config := outConfig.Out
 
 	deserializer, err := defineDeserializer(config.Format)
 	if err != nil {

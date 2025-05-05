@@ -28,9 +28,11 @@ func (b BufioWriteCloser) Close() error {
 
 func Test_format_csv(t *testing.T) {
 	configYml := `
-format: csv
-filepath: ./virtual
-header: true
+out:
+  type: file
+  format: csv
+  filepath: ./virtual
+  header: true
 `
 
 	buf := new(bytes.Buffer)

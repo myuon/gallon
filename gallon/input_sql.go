@@ -258,10 +258,12 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 }
 
 func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
-	var dbConfig InputPluginSqlConfig
-	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
+	var inConfig GallonConfig[InputPluginSqlConfig, any]
+	if err := yaml.Unmarshal(configYml, &inConfig); err != nil {
 		return nil, err
 	}
+
+	dbConfig := inConfig.In
 
 	db, err := sql.Open(dbConfig.Driver, dbConfig.DatabaseUrl)
 	if err != nil {

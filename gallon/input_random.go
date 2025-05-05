@@ -127,10 +127,12 @@ func (c InputPluginRandomConfigSchemaColumn) generateValue(index int) (any, erro
 }
 
 func NewInputPluginRandomFromConfig(configYml []byte) (*InputPluginRandom, error) {
-	var config InputPluginRandomConfig
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var inConfig GallonConfig[InputPluginRandomConfig, any]
+	if err := yaml.Unmarshal(configYml, &inConfig); err != nil {
 		return nil, err
 	}
+
+	config := inConfig.In
 
 	if config.PageSize == 0 {
 		config.PageSize = 10

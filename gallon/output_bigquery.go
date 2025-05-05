@@ -231,24 +231,26 @@ loop:
 }
 
 type OutputPluginBigQueryConfig struct {
-	ProjectId            string                                            `yaml:"projectId"`
-	DatasetId            string                                            `yaml:"datasetId"`
-	TableId              string                                            `yaml:"tableId"`
-	Endpoint             *string                                           `yaml:"endpoint"`
-	Schema               map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
-	DeleteTemporaryTable *bool                                             `yaml:"deleteTemporaryTable"`
+	ProjectId            string                                                                `yaml:"projectId"`
+	DatasetId            string                                                                `yaml:"datasetId"`
+	TableId              string                                                                `yaml:"tableId"`
+	Endpoint             *string                                                               `yaml:"endpoint"`
+	Schema               orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn] `yaml:"schema"`
+	DeleteTemporaryTable *bool                                                                 `yaml:"deleteTemporaryTable"`
 }
 
 type OutputPluginBigQueryConfigSchemaColumn struct {
-	Type   string                                            `yaml:"type"`
-	Fields map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"fields,omitempty"`
+	Type   string                                                                `yaml:"type"`
+	Fields orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn] `yaml:"fields,omitempty"`
 }
 
 func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery, error) {
-	var config OutputPluginBigQueryConfig
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var outConfig GallonConfig[any, OutputPluginBigQueryConfig]
+	if err := yaml.Unmarshal(configYml, &outConfig); err != nil {
 		return nil, err
 	}
+
+	config := outConfig.Out
 
 	options := []option.ClientOption{}
 
@@ -361,9 +363,11 @@ func getType(t string) (bigquery.FieldType, error) {
 	return "", errors.New("unknown type: " + t)
 }
 
-func getSchemaFromConfig(config map[string]OutputPluginBigQueryConfigSchemaColumn) (bigquery.Schema, error) {
+func getSchemaFromConfig(config orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn]) (bigquery.Schema, error) {
 	schema := bigquery.Schema{}
-	for name, column := range config {
+	for pair := config.Oldest(); pair != nil; pair = pair.Next() {
+		name := pair.Key
+		column := pair.Value
 		t, err := getType(column.Type)
 		if err != nil {
 			return nil, err
@@ -375,7 +379,7 @@ func getSchemaFromConfig(config map[string]OutputPluginBigQueryConfigSchemaColum
 		}
 
 		if t == bigquery.RecordFieldType {
-			if column.Fields == nil {
+			if column.Fields.Len() == 0 {
 				return nil, fmt.Errorf("record type field %s must have fields defined", name)
 			}
 			subSchema, err := getSchemaFromConfig(column.Fields)

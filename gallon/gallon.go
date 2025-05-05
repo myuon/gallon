@@ -159,3 +159,10 @@ func (g *Gallon) Run(ctx context.Context) error {
 }
 
 var ErrTooManyErrors = errors.New("too many errors")
+
+// GallonConfig is the schema of gallon config yaml.
+// Both `in` and `out` must contain `type` field. Plugins for input/output will be chosen by `type` field
+type GallonConfig[InConfig any, OutConfig any] struct {
+	In  InConfig  `yaml:"in"`
+	Out OutConfig `yaml:"out"`
+}

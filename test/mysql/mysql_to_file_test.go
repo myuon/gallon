@@ -15,8 +15,8 @@ import (
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
-	"gotest.tools/v3/assert"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -256,12 +256,12 @@ out:
 
 	// checks key order
 	parts := strings.Split(record, ",")
-	assert.Equal(t, "{\"id\":", parts[0])
-	assert.Equal(t, "\"name\":", parts[1])
-	assert.Equal(t, "\"age\":", parts[2])
-	assert.Equal(t, "\"created_at\":", parts[3])
-	assert.Equal(t, "\"birthday\":", parts[4])
-	assert.Equal(t, "\"has_partner\":", parts[5])
+	assert.Contains(t, parts[0], "\"id\":")
+	assert.Contains(t, parts[1], "\"name\":")
+	assert.Contains(t, parts[2], "\"age\":")
+	assert.Contains(t, parts[3], "\"created_at\":")
+	assert.Contains(t, parts[4], "\"birthday\":")
+	assert.Contains(t, parts[5], "\"has_partner\":")
 
 }
 

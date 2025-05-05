@@ -222,10 +222,12 @@ func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) 
 }
 
 func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, error) {
-	var dbConfig InputPluginDynamoDbConfig
-	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
+	var inConfig GallonConfig[InputPluginDynamoDbConfig, any]
+	if err := yaml.Unmarshal(configYml, &inConfig); err != nil {
 		return nil, err
 	}
+
+	dbConfig := inConfig.In
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
