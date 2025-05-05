@@ -16,6 +16,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"go.uber.org/zap"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -245,11 +246,23 @@ out:
 	if err != nil {
 		t.Errorf("Could not read output file: %s", err)
 	}
-	fmt.Printf("%v\n", strings.Join(strings.Split(string(jsonl), "\n")[0:10], "\n"))
+	log.Println(strings.Join(strings.Split(string(jsonl), "\n")[0:10], "\n"))
 
 	if strings.Count(string(jsonl), "\n") != 1000 {
 		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
 	}
+
+	record := strings.Split(string(jsonl), "\n")[0]
+
+	// checks key order
+	parts := strings.Split(record, ",")
+	assert.Equal(t, "{\"id\":", parts[0])
+	assert.Equal(t, "\"name\":", parts[1])
+	assert.Equal(t, "\"age\":", parts[2])
+	assert.Equal(t, "\"created_at\":", parts[3])
+	assert.Equal(t, "\"birthday\":", parts[4])
+	assert.Equal(t, "\"has_partner\":", parts[5])
+
 }
 
 func Test_mysql_to_file_with_tinyint(t *testing.T) {
