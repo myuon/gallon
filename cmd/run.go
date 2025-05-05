@@ -55,6 +55,8 @@ func RunGallonWithPath(configPath string, opts RunGallonOptions) error {
 		return err
 	}
 
+	zap.S().Infow("Detected config files", "files", files)
+
 	for _, file := range files {
 		zap.S().Infow("RunGallon", "path", file)
 
