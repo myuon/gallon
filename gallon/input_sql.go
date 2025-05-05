@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,14 +21,14 @@ type InputPluginSql struct {
 	client    *sql.DB
 	tableName string
 	driver    string
-	serialize func(map[string]any) (any, error)
+	serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error)
 }
 
 func NewInputPluginSql(
 	client *sql.DB,
 	tableName string,
 	driver string,
-	serialize func(map[string]any) (any, error),
+	serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error),
 ) *InputPluginSql {
 	return &InputPluginSql{
 		client:    client,
@@ -45,7 +46,7 @@ func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 
 func (p *InputPluginSql) Extract(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	hasNext := true
@@ -97,7 +98,7 @@ loop:
 				return err
 			}
 
-			msgs := []any{}
+			msgs := []GallonRecord{}
 			for rows.Next() {
 				columns := make([]any, len(cols))
 				columnPointers := make([]any, len(cols))
@@ -110,10 +111,10 @@ loop:
 					continue
 				}
 
-				record := map[string]any{}
+				record := *orderedmap.New[string, any]()
 				for i, colName := range cols {
 					val := columnPointers[i].(*any)
-					record[colName] = *val
+					record.Set(colName, *val)
 				}
 
 				r, err := p.serialize(record)
@@ -145,14 +146,15 @@ loop:
 }
 
 type InputPluginSqlConfig struct {
-	Table       string                                      `yaml:"table"`
-	DatabaseUrl string                                      `yaml:"database_url"`
-	Driver      string                                      `yaml:"driver"`
-	Schema      map[string]InputPluginSqlConfigSchemaColumn `yaml:"schema"`
+	Table       string                                                          `yaml:"table"`
+	DatabaseUrl string                                                          `yaml:"database_url"`
+	Driver      string                                                          `yaml:"driver"`
+	Schema      orderedmap.OrderedMap[string, InputPluginSqlConfigSchemaColumn] `yaml:"schema"`
 }
 
 type InputPluginSqlConfigSchemaColumn struct {
-	Type string `yaml:"type"`
+	Type   string  `yaml:"type"`
+	Format *string `yaml:"format"`
 }
 
 func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
@@ -224,8 +226,12 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 		// when parseTime not specified, mysql returns []byte
 		b, ok := value.([]byte)
 		if ok {
-			// This format is tested with mysql 8.0
-			v, err := time.Parse("2006-01-02 15:04:05", string(b))
+			format := "2006-01-02 15:04:05"
+			if c.Format != nil {
+				format = *c.Format
+			}
+
+			v, err := time.Parse(format, string(b))
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse time: %v", err)
 			}
@@ -257,10 +263,12 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 }
 
 func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
-	var dbConfig InputPluginSqlConfig
-	if err := yaml.Unmarshal(configYml, &dbConfig); err != nil {
+	var inConfig GallonConfig[InputPluginSqlConfig, any]
+	if err := yaml.Unmarshal(configYml, &inConfig); err != nil {
 		return nil, err
 	}
+
+	dbConfig := inConfig.In
 
 	db, err := sql.Open(dbConfig.Driver, dbConfig.DatabaseUrl)
 	if err != nil {
@@ -274,21 +282,21 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 		db,
 		dbConfig.Table,
 		dbConfig.Driver,
-		func(item map[string]any) (any, error) {
-			record := map[string]any{}
+		func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
+			record := NewGallonRecord()
 
-			for k, v := range item {
-				schema, ok := dbConfig.Schema[k]
+			for pair := dbConfig.Schema.Oldest(); pair != nil; pair = pair.Next() {
+				value, ok := item.Get(pair.Key)
 				if !ok {
 					continue
 				}
 
-				value, err := schema.getValue(v)
+				v, err := pair.Value.getValue(value)
 				if err != nil {
-					return nil, errors.Join(err, fmt.Errorf("failed to get value for column: %v", k))
+					return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to get value for column: %v", pair.Key))
 				}
 
-				record[k] = value
+				record.Set(pair.Key, v)
 			}
 
 			return record, nil

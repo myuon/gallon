@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v3"
 )
@@ -25,7 +25,7 @@ type OutputPluginBigQuery struct {
 	datasetId            string
 	tableId              string
 	schema               bigquery.Schema
-	deserialize          func(any) ([]bigquery.Value, error)
+	deserialize          func(GallonRecord) ([]bigquery.Value, error)
 	deleteTemporaryTable bool
 }
 
@@ -35,7 +35,7 @@ func NewOutputPluginBigQuery(
 	datasetId string,
 	tableId string,
 	schema bigquery.Schema,
-	deserialize func(any) ([]bigquery.Value, error),
+	deserialize func(GallonRecord) ([]bigquery.Value, error),
 	deleteTemporaryTable bool,
 ) *OutputPluginBigQuery {
 	return &OutputPluginBigQuery{
@@ -83,7 +83,7 @@ func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, table
 
 func (p *OutputPluginBigQuery) Load(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	temporaryTableId := fmt.Sprintf("LOAD_TEMP_%s_%s", p.tableId, uuid.New().String())
@@ -136,22 +136,16 @@ loop:
 				break loop
 			}
 
-			msgsSlice, ok := msgs.([]any)
-			if !ok {
-				errs <- fmt.Errorf("unexpected type: %T", reflect.TypeOf(msgs))
-				continue
-			}
-
-			for _, msg := range msgsSlice {
+			for _, msg := range msgs {
 				values, err := p.deserialize(msg)
 				if err != nil {
 					errs <- fmt.Errorf("failed to deserialize: %v, %v", msg, err)
 					continue
 				}
 
-				mp := map[string]any{}
+				mp := orderedmap.New[string, any]()
 				for i, v := range p.schema {
-					mp[v.Name] = values[i]
+					mp.Set(v.Name, values[i])
 				}
 
 				if err := temporaryFileWriter.Encode(mp); err != nil {
@@ -160,8 +154,8 @@ loop:
 				}
 			}
 
-			if len(msgsSlice) > 0 {
-				loadedTotal += len(msgsSlice)
+			if len(msgs) > 0 {
+				loadedTotal += len(msgs)
 				p.logger.Info(fmt.Sprintf("loaded %v rows", loadedTotal))
 			}
 		}
@@ -237,24 +231,26 @@ loop:
 }
 
 type OutputPluginBigQueryConfig struct {
-	ProjectId            string                                            `yaml:"projectId"`
-	DatasetId            string                                            `yaml:"datasetId"`
-	TableId              string                                            `yaml:"tableId"`
-	Endpoint             *string                                           `yaml:"endpoint"`
-	Schema               map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"schema"`
-	DeleteTemporaryTable *bool                                             `yaml:"deleteTemporaryTable"`
+	ProjectId            string                                                                `yaml:"projectId"`
+	DatasetId            string                                                                `yaml:"datasetId"`
+	TableId              string                                                                `yaml:"tableId"`
+	Endpoint             *string                                                               `yaml:"endpoint"`
+	Schema               orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn] `yaml:"schema"`
+	DeleteTemporaryTable *bool                                                                 `yaml:"deleteTemporaryTable"`
 }
 
 type OutputPluginBigQueryConfigSchemaColumn struct {
-	Type   string                                            `yaml:"type"`
-	Fields map[string]OutputPluginBigQueryConfigSchemaColumn `yaml:"fields,omitempty"`
+	Type   string                                                                `yaml:"type"`
+	Fields orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn] `yaml:"fields,omitempty"`
 }
 
 func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery, error) {
-	var config OutputPluginBigQueryConfig
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var outConfig GallonConfig[any, OutputPluginBigQueryConfig]
+	if err := yaml.Unmarshal(configYml, &outConfig); err != nil {
 		return nil, err
 	}
+
+	config := outConfig.Out
 
 	options := []option.ClientOption{}
 
@@ -283,10 +279,15 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		config.DatasetId,
 		config.TableId,
 		schema,
-		func(item any) ([]bigquery.Value, error) {
+		func(item GallonRecord) ([]bigquery.Value, error) {
 			values := []bigquery.Value{}
 			for _, v := range schema {
-				value := item.(map[string]any)[v.Name]
+				value, ok := item.Get(v.Name)
+				if !ok {
+					values = append(values, nil)
+					continue
+				}
+
 				if v.Type == bigquery.RecordFieldType {
 					if value == nil {
 						values = append(values, nil)
@@ -362,9 +363,11 @@ func getType(t string) (bigquery.FieldType, error) {
 	return "", errors.New("unknown type: " + t)
 }
 
-func getSchemaFromConfig(config map[string]OutputPluginBigQueryConfigSchemaColumn) (bigquery.Schema, error) {
+func getSchemaFromConfig(config orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn]) (bigquery.Schema, error) {
 	schema := bigquery.Schema{}
-	for name, column := range config {
+	for pair := config.Oldest(); pair != nil; pair = pair.Next() {
+		name := pair.Key
+		column := pair.Value
 		t, err := getType(column.Type)
 		if err != nil {
 			return nil, err
@@ -376,7 +379,7 @@ func getSchemaFromConfig(config map[string]OutputPluginBigQueryConfigSchemaColum
 		}
 
 		if t == bigquery.RecordFieldType {
-			if column.Fields == nil {
+			if column.Fields.Len() == 0 {
 				return nil, fmt.Errorf("record type field %s must have fields defined", name)
 			}
 			subSchema, err := getSchemaFromConfig(column.Fields)

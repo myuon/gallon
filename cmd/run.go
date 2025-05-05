@@ -32,58 +32,23 @@ var RunCmd = &cobra.Command{
 	},
 }
 
-// GallonConfig is the schema of gallon config yaml.
-// Both `in` and `out` must contain `type` field. Plugins for input/output will be chosen by `type` field
-type GallonConfig struct {
-	In  map[string]any `yaml:"in"`
-	Out map[string]any `yaml:"out"`
-}
-
-type GallonConfigType struct {
+type WithTypeConfig struct {
 	Type string `yaml:"type"`
-}
-
-func getType(config map[string]any) (string, error) {
-	t, ok := config["type"]
-	if !ok {
-		return "", errors.New("type not found")
-	}
-
-	tStr, ok := t.(string)
-	if !ok {
-		return "", errors.New("type is not string")
-	}
-
-	return tStr, nil
-}
-
-func getTypeAndYml(config map[string]any) (string, []byte, error) {
-	t, err := getType(config)
-	if err != nil {
-		return "", nil, err
-	}
-
-	yml, err := yaml.Marshal(config)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return t, yml, nil
 }
 
 // RunGallon runs a migration with the given config yaml. See GallonConfig for the schema of the file.
 func RunGallon(configYml []byte) error {
-	var config GallonConfig
+	var config gallon.GallonConfig[WithTypeConfig, WithTypeConfig]
 	if err := yaml.Unmarshal(configYml, &config); err != nil {
 		return err
 	}
 
-	input, err := findInputPlugin(config)
+	input, err := findInputPlugin(config.In.Type, configYml)
 	if err != nil {
 		return err
 	}
 
-	output, err := findOutputPlugin(config)
+	output, err := findOutputPlugin(config.Out.Type, configYml)
 	if err != nil {
 		return err
 	}
@@ -100,35 +65,25 @@ func RunGallon(configYml []byte) error {
 	return nil
 }
 
-func findInputPlugin(config GallonConfig) (gallon.InputPlugin, error) {
-	t, yml, err := getTypeAndYml(config.In)
-	if err != nil {
-		return nil, err
-	}
-
+func findInputPlugin(t string, configYml []byte) (gallon.InputPlugin, error) {
 	if t == "dynamodb" {
-		return gallon.NewInputPluginDynamoDbFromConfig(yml)
+		return gallon.NewInputPluginDynamoDbFromConfig(configYml)
 	} else if t == "sql" {
-		return gallon.NewInputPluginSqlFromConfig(yml)
+		return gallon.NewInputPluginSqlFromConfig(configYml)
 	} else if t == "random" {
-		return gallon.NewInputPluginRandomFromConfig(yml)
+		return gallon.NewInputPluginRandomFromConfig(configYml)
 	}
 
 	return nil, errors.New("plugin not found: " + t)
 }
 
-func findOutputPlugin(config GallonConfig) (gallon.OutputPlugin, error) {
-	t, yml, err := getTypeAndYml(config.Out)
-	if err != nil {
-		return nil, err
-	}
-
+func findOutputPlugin(t string, configYml []byte) (gallon.OutputPlugin, error) {
 	if t == "bigquery" {
-		return gallon.NewOutputPluginBigQueryFromConfig(yml)
+		return gallon.NewOutputPluginBigQueryFromConfig(configYml)
 	} else if t == "file" {
-		return gallon.NewOutputPluginFileFromConfig(yml)
+		return gallon.NewOutputPluginFileFromConfig(configYml)
 	} else if t == "stdout" {
-		return gallon.NewOutputPluginStdoutFromConfig(yml)
+		return gallon.NewOutputPluginStdoutFromConfig(configYml)
 	}
 
 	return nil, errors.New("plugin not found: " + t)

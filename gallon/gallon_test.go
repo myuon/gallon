@@ -14,20 +14,21 @@ format: json
 		t.Errorf("Could not create plugin: %s", err)
 	}
 
-	output.deserialize = func(i any) ([]byte, error) {
+	output.deserialize = func(i GallonRecord) ([]byte, error) {
 		return nil, errors.New("error")
 	}
 
-	data := [][]map[string]any{}
+	data := [][]GallonRecord{}
 	for i := 0; i < 10; i++ {
-		page := []map[string]any{}
+		page := []GallonRecord{}
 		for j := 0; j < 10; j++ {
-			page = append(page, map[string]any{
-				"id":         "1",
-				"name":       "foo",
-				"age":        20,
-				"created_at": 1234567890,
-			})
+			r := NewGallonRecord()
+			r.Set("id", "1")
+			r.Set("name", "foo")
+			r.Set("age", 20)
+			r.Set("created_at", 1234567890)
+
+			page = append(page, r)
 		}
 
 		data = append(data, page)

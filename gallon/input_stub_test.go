@@ -8,11 +8,11 @@ import (
 )
 
 type InputPluginStub struct {
-	data [][]map[string]any
+	data [][]GallonRecord
 }
 
 func NewInputPluginStub(
-	data [][]map[string]any,
+	data [][]GallonRecord,
 ) *InputPluginStub {
 	return &InputPluginStub{
 		data: data,
@@ -26,7 +26,7 @@ func (i InputPluginStub) ReplaceLogger(logger logr.Logger) {
 
 func (i InputPluginStub) Extract(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	p := 0
@@ -36,14 +36,9 @@ func (i InputPluginStub) Extract(
 		case <-ctx.Done():
 			return nil
 		default:
-			records := []any{}
-			for _, record := range i.data[p] {
-				records = append(records, record)
-			}
-
-			if len(records) > 0 {
-				messages <- records
-				logger.Info(fmt.Sprintf("extracted %v records", len(records)), "page", p)
+			if len(i.data[p]) > 0 {
+				messages <- i.data[p]
+				logger.Info(fmt.Sprintf("extracted %v records", len(i.data[p])), "page", p)
 			}
 			p++
 		}

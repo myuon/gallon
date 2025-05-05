@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -19,12 +17,12 @@ import (
 
 type OutputPluginFile struct {
 	logger      logr.Logger
-	deserialize func(any) ([]byte, error)
+	deserialize func(GallonRecord) ([]byte, error)
 	newWriter   func() (io.WriteCloser, error)
 }
 
 func NewOutputPluginFile(
-	deserialize func(any) ([]byte, error),
+	deserialize func(GallonRecord) ([]byte, error),
 	newWriter func() (io.WriteCloser, error),
 ) *OutputPluginFile {
 	return &OutputPluginFile{
@@ -41,7 +39,7 @@ func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
 
 func (p *OutputPluginFile) Load(
 	ctx context.Context,
-	messages chan any,
+	messages chan []GallonRecord,
 	errs chan error,
 ) error {
 	fs, err := p.newWriter()
@@ -67,12 +65,10 @@ loop:
 				break loop
 			}
 
-			msgSlice := msgs.([]any)
-
-			for _, msg := range msgSlice {
+			for _, msg := range msgs {
 				bs, err := p.deserialize(msg)
 				if err != nil {
-					errs <- errors.New("failed to deserialize dynamodb record: " + fmt.Sprintf("%v", msg))
+					errs <- errors.New("failed to deserialize record: " + fmt.Sprintf("%v", msg))
 					continue
 				}
 
@@ -81,8 +77,8 @@ loop:
 				}
 			}
 
-			if len(msgSlice) > 0 {
-				loadedTotal += len(msgSlice)
+			if len(msgs) > 0 {
+				loadedTotal += len(msgs)
 				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
 			}
 		}
@@ -98,10 +94,12 @@ type OutputPluginFileConfig struct {
 }
 
 func NewOutputPluginFileFromConfig(configYml []byte) (*OutputPluginFile, error) {
-	config := OutputPluginFileConfig{}
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+	var outConfig GallonConfig[any, OutputPluginFileConfig]
+	if err := yaml.Unmarshal(configYml, &outConfig); err != nil {
 		return nil, err
 	}
+
+	config := outConfig.Out
 
 	deserializer, err := defineDeserializer(config.Format)
 	if err != nil {
@@ -123,11 +121,11 @@ func NewOutputPluginFileFromConfig(configYml []byte) (*OutputPluginFile, error) 
 	), nil
 }
 
-func defineDeserializer(format string) (func(any) ([]byte, error), error) {
+func defineDeserializer(format string) (func(GallonRecord) ([]byte, error), error) {
 	switch strings.ToLower(format) {
 	case "jsonl":
-		return func(i any) ([]byte, error) {
-			j, err := json.Marshal(i)
+		return func(i GallonRecord) ([]byte, error) {
+			j, err := i.MarshalJSON()
 			if err != nil {
 				return nil, err
 			}
@@ -135,21 +133,15 @@ func defineDeserializer(format string) (func(any) ([]byte, error), error) {
 			return []byte(fmt.Sprintf("%v\n", string(j))), nil
 		}, nil
 	case "csv":
-		return func(i any) ([]byte, error) {
-			m, ok := i.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("failed to convert to map[string]any: %v", i)
-			}
-
-			keys := []string{}
-			for k := range m {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-
+		return func(i GallonRecord) ([]byte, error) {
 			cells := []string{}
-			for _, k := range keys {
-				cells = append(cells, fmt.Sprintf("%v", m[k]))
+			for _, k := range i.Keys() {
+				value, ok := i.Get(k)
+				if !ok {
+					return nil, fmt.Errorf("failed to get value for column: %v", k)
+				}
+
+				cells = append(cells, fmt.Sprintf("%v", value))
 			}
 
 			buf := new(bytes.Buffer)

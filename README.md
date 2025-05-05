@@ -170,8 +170,8 @@ in:
 - endpoint: for dynamodb-local (optional)
 - schema
   - type: `string`, `number`, `boolean`, `object`, `array`, `any` are supported
-  - properties: for `object` type, define nested fields
-  - items: for `array` type, define item type
+  - properties: for `object` type, define nested fields in `properties` properties
+  - items: for `array` type, define item type in `items` properties
 
 ### SQL(RDB) Input Plugin
 
@@ -192,6 +192,7 @@ in:
       type: int
     birthday:
       type: time
+      format: "2006-01-02 15:04:05"
     has_partner:
       type: bool
     balance:
@@ -205,6 +206,7 @@ in:
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
 - schema
   - type: `string`, `int`, `float`, `decimal`, `time`, `bool`, `json` are supported. NULL are always acceptable.
+  - format: for `time` type. Specify time format string in [Go time layout](https://pkg.go.dev/time#Layout). Default is `2006-01-02 15:04:05`. (optional)
 
 ### Random Input Plugin
 
@@ -272,6 +274,8 @@ out:
           type: string
         address:
           type: string
+    metadata:
+      type: any
   deleteTemporaryTable: true
 ```
 
@@ -281,8 +285,9 @@ out:
 - tableId: Your BigQuery Table ID
 - endpoint: for bigquery-emulator (optional)
 - schema
-  - type: `string`, `integer`, `float`, `boolean`, `timestamp`, `record` are supported
+  - type: `string`, `integer`, `float`, `boolean`, `timestamp`, `record`, `any` are supported
     - If non-string value is passed while `string` is specified, the value will be serialized using `json.Marshal`
+    - For `record` type, define nested fields in `fields` properties
   - fields: for `record` type, define nested fields
 - deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
 

@@ -159,7 +159,23 @@ out:
 		t.Errorf("Could not run command: %s", err)
 	}
 
-	it := client.Dataset("dataset1").Table("user").Read(context.Background())
+	table := client.Dataset("dataset1").Table("user")
+
+	metadata, err := table.Metadata(context.Background())
+	if err != nil {
+		t.Errorf("Could not get metadata: %s", err)
+	}
+
+	assert.Equal(t, "id", metadata.Schema[0].Name)
+	assert.Equal(t, bigquery.StringFieldType, metadata.Schema[0].Type)
+	assert.Equal(t, "name", metadata.Schema[1].Name)
+	assert.Equal(t, bigquery.StringFieldType, metadata.Schema[1].Type)
+	assert.Equal(t, "age", metadata.Schema[2].Name)
+	assert.Equal(t, bigquery.IntegerFieldType, metadata.Schema[2].Type)
+	assert.Equal(t, "created_at", metadata.Schema[3].Name)
+	assert.Equal(t, bigquery.IntegerFieldType, metadata.Schema[3].Type)
+
+	it := table.Read(context.Background())
 
 	count := 0
 	recordSamples := []UserTable{}
@@ -322,7 +338,8 @@ out:
 		t.Errorf("Could not run command: %s", err)
 	}
 
-	it := client.Dataset("dataset1").Table("user_with_json").Read(context.Background())
+	table := client.Dataset("dataset1").Table("user_with_json")
+	it := table.Read(context.Background())
 
 	count := 0
 	recordSamples := []UserWithJSON{}

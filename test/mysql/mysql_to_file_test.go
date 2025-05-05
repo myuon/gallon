@@ -15,6 +15,7 @@ import (
 	"github.com/myuon/gallon/cmd"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -245,11 +246,23 @@ out:
 	if err != nil {
 		t.Errorf("Could not read output file: %s", err)
 	}
-	fmt.Printf("%v\n", strings.Join(strings.Split(string(jsonl), "\n")[0:10], "\n"))
+	log.Println(strings.Join(strings.Split(string(jsonl), "\n")[0:10], "\n"))
 
 	if strings.Count(string(jsonl), "\n") != 1000 {
 		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
 	}
+
+	record := strings.Split(string(jsonl), "\n")[0]
+
+	// checks key order
+	parts := strings.Split(record, ",")
+	assert.Contains(t, parts[0], "\"id\":")
+	assert.Contains(t, parts[1], "\"name\":")
+	assert.Contains(t, parts[2], "\"age\":")
+	assert.Contains(t, parts[3], "\"created_at\":")
+	assert.Contains(t, parts[4], "\"birthday\":")
+	assert.Contains(t, parts[5], "\"has_partner\":")
+
 }
 
 func Test_mysql_to_file_with_tinyint(t *testing.T) {
