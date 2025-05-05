@@ -24,6 +24,9 @@ gallon run --template /path/to/config.yml
 
 # Parse the config file as a Go's text/template with environment variables injected
 gallon run --template-with-env /path/to/config.yml
+
+# Run multiple config files using glob pattern
+gallon run --template-with-env "/path/to/*.yml"
 ```
 
 ## Example
