@@ -192,6 +192,7 @@ in:
       type: int
     birthday:
       type: time
+      format: "2006-01-02 15:04:05"
     has_partner:
       type: bool
     balance:
@@ -205,6 +206,7 @@ in:
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
 - schema
   - type: `string`, `int`, `float`, `decimal`, `time`, `bool`, `json` are supported. NULL are always acceptable.
+  - format: for `time` type. Specify time format string in [Go time layout](https://pkg.go.dev/time#Layout). Default is `2006-01-02 15:04:05`. (optional)
 
 ### Random Input Plugin
 

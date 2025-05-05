@@ -153,7 +153,8 @@ type InputPluginSqlConfig struct {
 }
 
 type InputPluginSqlConfigSchemaColumn struct {
-	Type string `yaml:"type"`
+	Type   string  `yaml:"type"`
+	Format *string `yaml:"format"`
 }
 
 func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
@@ -225,8 +226,12 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 		// when parseTime not specified, mysql returns []byte
 		b, ok := value.([]byte)
 		if ok {
-			// This format is tested with mysql 8.0
-			v, err := time.Parse("2006-01-02 15:04:05", string(b))
+			format := "2006-01-02 15:04:05"
+			if c.Format != nil {
+				format = *c.Format
+			}
+
+			v, err := time.Parse(format, string(b))
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse time: %v", err)
 			}
