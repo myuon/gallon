@@ -1,0 +1,16 @@
+in:
+  type: random
+  schema:
+    id:
+      type: uuid
+    name:
+      type: name
+    age:
+      type: int
+      min: 0
+      max: 100
+    created_at:
+      type: unixtime
+out:
+  type: stdout
+  format: json

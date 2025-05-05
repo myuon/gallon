@@ -2,9 +2,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
+	"strings"
+	"text/template"
 
 	"github.com/go-logr/zapr"
 	"github.com/myuon/gallon/gallon"
@@ -12,6 +15,14 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
+
+var withTemplate bool
+var withTemplateWithEnv bool
+
+func init() {
+	RunCmd.Flags().BoolVar(&withTemplate, "template", false, "parse the config file as a Go's text/template")
+	RunCmd.Flags().BoolVar(&withTemplateWithEnv, "template-with-env", false, "parse the config file as a Go's text/template with environment variables injected")
+}
 
 // RunCmd defines `gallon run` command.
 var RunCmd = &cobra.Command{
@@ -26,7 +37,12 @@ var RunCmd = &cobra.Command{
 			zap.S().Error(err)
 		}
 
-		if err := RunGallon(configFileBody); err != nil {
+		opts := RunGallonOptions{
+			AsTemplate: withTemplate || withTemplateWithEnv,
+			WithEnv:    withTemplateWithEnv,
+		}
+
+		if err := RunGallonWithOptions(configFileBody, opts); err != nil {
 			zap.S().Error(err)
 		}
 	},
@@ -36,19 +52,59 @@ type WithTypeConfig struct {
 	Type string `yaml:"type"`
 }
 
-// RunGallon runs a migration with the given config yaml. See GallonConfig for the schema of the file.
+type RunGallonOptions struct {
+	AsTemplate bool
+	WithEnv    bool
+}
+
+// RunGallon runs a migration with the given config yaml.
+// It is a shortcut for RunGallonWithOptions with default options.
 func RunGallon(configYml []byte) error {
+	return RunGallonWithOptions(configYml, RunGallonOptions{
+		AsTemplate: false,
+		WithEnv:    false,
+	})
+}
+
+// RunGallonWithOptions runs a migration with the given config yaml. See GallonConfig for the schema of the file.
+func RunGallonWithOptions(configYml []byte, opts RunGallonOptions) error {
+	configBytes := configYml
+	if opts.AsTemplate {
+		tmpl, err := template.New("gallonConfig").Parse(string(configYml))
+		if err != nil {
+			return err
+		}
+
+		dataMap := map[string]string{}
+		if opts.WithEnv {
+			for _, e := range os.Environ() {
+				parts := strings.SplitN(e, "=", 2)
+				if len(parts) == 2 {
+					dataMap[parts[0]] = parts[1]
+				}
+			}
+		}
+
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, dataMap); err != nil {
+			return err
+		}
+
+		configBytes = buf.Bytes()
+	}
+
 	var config gallon.GallonConfig[WithTypeConfig, WithTypeConfig]
-	if err := yaml.Unmarshal(configYml, &config); err != nil {
+
+	if err := yaml.Unmarshal(configBytes, &config); err != nil {
 		return err
 	}
 
-	input, err := findInputPlugin(config.In.Type, configYml)
+	input, err := findInputPlugin(config.In.Type, configBytes)
 	if err != nil {
 		return err
 	}
 
-	output, err := findOutputPlugin(config.Out.Type, configYml)
+	output, err := findOutputPlugin(config.Out.Type, configBytes)
 	if err != nil {
 		return err
 	}

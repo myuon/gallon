@@ -16,6 +16,16 @@ go install github.com/myuon/gallon@latest
 gallon run /path/to/config.yml
 ```
 
+You can also use Go's text/template to generate your config file:
+
+```bash
+# Parse the config file as a Go's text/template
+gallon run --template /path/to/config.yml
+
+# Parse the config file as a Go's text/template with environment variables injected
+gallon run --template-with-env /path/to/config.yml
+```
+
 ## Example
 
 ```yaml
@@ -23,7 +33,6 @@ in:
   type: dynamodb
   region: ap-northeast-1
   table: users
-  endpoint: "http://localhost:8000"
   schema:
     id:
       type: string
