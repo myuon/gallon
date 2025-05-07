@@ -145,6 +145,10 @@ loop:
 	return nil
 }
 
+func (p *InputPluginSql) CloseConnection() error {
+	return p.client.Close()
+}
+
 type InputPluginSqlConfig struct {
 	Table       string                                                          `yaml:"table"`
 	DatabaseUrl string                                                          `yaml:"database_url"`
