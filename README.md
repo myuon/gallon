@@ -212,6 +212,19 @@ in:
       type: decimal
     preferences:
       type: json
+    old_column_name:
+      type: string
+      rename: new_column_name
+    unix_timestamp:
+      type: int
+      transforms:
+        - type: time
+          as: unix
+    created_at:
+      type: time
+      transforms:
+        - type: string
+          format: "2006-01-02 15:04:05"
 ```
 
 - driver: `mysql`, `postgres` are supported
@@ -223,6 +236,13 @@ in:
 - schema
   - type: `string`, `int`, `float`, `decimal`, `time`, `date`, `bool`, `json` are supported. NULL are always acceptable.
     - `date`: Returns YYYY-MM-DD formatted string. If you want to return time.Time object, specify `time` type.
+  - rename: Change column name.
+  - transforms: Change column value type.
+    - type: Change type to `string`, `time`.
+    - format: Format for type conversion. The following formats are supported.
+      - For `time`, you can specify Go time format string (e.g. `2006-01-02 15:04:05`)
+    - as: Convert method for type conversion. The following methods are supported.
+      - For `int` type, you can specify `unix` to interpret as Unix timestamp.
 
 ### Random Input Plugin
 
