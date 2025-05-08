@@ -234,15 +234,10 @@ func TestMain(m *testing.M) {
 	}
 
 	if err := bqPool.Retry(func() error {
-		log.Println("Trying to connect to BigQuery...")
+		log.Println("Trying to connect to database...")
 
-		err := bqClient.Dataset("dataset1").Create(context.Background(), nil)
-		if err != nil {
-			log.Printf("err: %v", err)
-			return err
-		}
-
-		return nil
+		_, err := bqClient.Dataset("dataset1").Metadata(context.Background())
+		return err
 	}); err != nil {
 		log.Fatalf("Could not connect to BigQuery: %v", err)
 	}
