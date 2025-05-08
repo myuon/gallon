@@ -159,6 +159,7 @@ type InputPluginSqlConfig struct {
 type InputPluginSqlConfigSchemaColumn struct {
 	Type       string                                      `yaml:"type"`
 	Transforms []InputPluginSqlConfigSchemaColumnTransform `yaml:"transforms"`
+	Rename     *string                                     `yaml:"rename"`
 }
 
 type InputPluginSqlConfigSchemaColumnTransform struct {
@@ -361,7 +362,12 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 					sourceType = transform.Type
 				}
 
-				record.Set(pair.Key, v)
+				columnName := pair.Key
+				if pair.Value.Rename != nil {
+					columnName = *pair.Value.Rename
+				}
+
+				record.Set(columnName, v)
 			}
 
 			return record, nil
