@@ -204,7 +204,6 @@ in:
       type: int
     birthday:
       type: time
-      format: "2006-01-02 15:04:05"
     has_partner:
       type: bool
     balance:
@@ -221,7 +220,6 @@ in:
   - For MySQL, it should be `user:password@tcp(host:port)/dbname` (See: [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#dsn-data-source-name))
 - schema
   - type: `string`, `int`, `float`, `decimal`, `time`, `bool`, `json` are supported. NULL are always acceptable.
-  - format: for `time` type. Specify time format string in [Go time layout](https://pkg.go.dev/time#Layout). Default is `2006-01-02 15:04:05`. (optional)
 
 ### Random Input Plugin
 
