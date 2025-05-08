@@ -157,7 +157,34 @@ type InputPluginSqlConfig struct {
 }
 
 type InputPluginSqlConfigSchemaColumn struct {
-	Type string `yaml:"type"`
+	Type       string                                      `yaml:"type"`
+	Transforms []InputPluginSqlConfigSchemaColumnTransform `yaml:"transforms"`
+}
+
+type InputPluginSqlConfigSchemaColumnTransform struct {
+	// Operation: type conversion
+	Type   string  `yaml:"type"`
+	Format *string `yaml:"format"`
+}
+
+func (c InputPluginSqlConfigSchemaColumnTransform) Transform(schemaType string, value any) (any, error) {
+	switch schemaType {
+	case "time":
+		v, ok := value.(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("value is not time: %v", value)
+		}
+
+		if c.Type == "string" {
+			if c.Format != nil {
+				return v.Format(*c.Format), nil
+			}
+
+			return v.Format(time.RFC3339), nil
+		}
+	}
+
+	return nil, fmt.Errorf("unsupported transform: %v -> %v", schemaType, c.Type)
 }
 
 func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
@@ -309,6 +336,13 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 				v, err := pair.Value.getValue(value)
 				if err != nil {
 					return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to get value for column: %v", pair.Key))
+				}
+
+				for _, transform := range pair.Value.Transforms {
+					v, err = transform.Transform(pair.Value.Type, v)
+					if err != nil {
+						return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to transform value for column: %v", pair.Key))
+					}
 				}
 
 				record.Set(pair.Key, v)

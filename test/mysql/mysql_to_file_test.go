@@ -573,3 +573,95 @@ out:
 		}
 	}
 }
+
+func Test_mysql_to_file_with_time_transform(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  table: users
+  database_url: %v
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: int
+    created_at:
+      type: int
+    birthday:
+      type: time
+      transforms:
+        - type: string
+          format: "2006-01-02 15:04:05"
+    join_date:
+      type: date
+    has_partner:
+      type: bool
+    is_active:
+      type: bool
+    is_premium:
+      type: bool
+    metadata:
+      type: json
+    balance:
+      type: decimal
+out:
+  type: file
+  filepath: ./output_time_transform.jsonl
+  format: jsonl
+`, databaseUrl)
+	defer func() {
+		if err := os.Remove("./output_time_transform.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_time_transform.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) > 10 {
+		lines = lines[:10]
+	}
+	fmt.Printf("%v\n", strings.Join(lines, "\n"))
+
+	if strings.Count(string(jsonl), "\n") != 1000 {
+		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
+	}
+
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Errorf("Failed to parse line %d: %v", i, err)
+			continue
+		}
+
+		birthday, ok := record["birthday"].(string)
+		if !ok {
+			t.Errorf("birthday is not string in line %d: %v", i, record["birthday"])
+			continue
+		}
+
+		re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$`)
+		if !re.MatchString(birthday) {
+			t.Errorf("birthday is not in YYYY-MM-DD HH:mm:ss format in line %d: %v", i, birthday)
+		}
+
+		// パースして実際に有効な日時かどうかも確認
+		_, err := time.Parse("2006-01-02 15:04:05", birthday)
+		if err != nil {
+			t.Errorf("birthday is not a valid datetime in line %d: %v", i, err)
+		}
+	}
+}
