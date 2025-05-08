@@ -303,6 +303,8 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 					switch value.(type) {
 					case string:
 						values = append(values, value)
+					case nil:
+						values = append(values, nil)
 					default:
 						jsonBytes, err := json.Marshal(value)
 						if err != nil {

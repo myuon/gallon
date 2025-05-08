@@ -375,3 +375,103 @@ out:
 		assert.NotEqual(t, "", record["metadata"])
 	}
 }
+
+func Test_mysql_to_bigquery_null(t *testing.T) {
+	// テスト用のテーブルを作成
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Could not get connection: %s", err)
+	}
+	defer conn.Close()
+
+	queryCreateTable, err := conn.QueryContext(ctx, strings.Join([]string{
+		"CREATE TABLE IF NOT EXISTS null_test (",
+		"id VARCHAR(255) NOT NULL,",
+		"nullable_string VARCHAR(255),",
+		"PRIMARY KEY (id)",
+		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+	}, "\n"))
+	if err != nil {
+		t.Fatalf("Could not create table: %s", err)
+	}
+	queryCreateTable.Close()
+
+	// テストデータを挿入
+	query, err := conn.PrepareContext(
+		ctx,
+		"INSERT INTO null_test (id, nullable_string) VALUES (?, ?)",
+	)
+	if err != nil {
+		t.Fatalf("Could not prepare query: %s", err)
+	}
+	defer query.Close()
+
+	// NULL値と非NULL値の両方を挿入
+	if _, err := query.Exec("1", "not null"); err != nil {
+		t.Fatalf("Could not insert data: %s", err)
+	}
+	if _, err := query.Exec("2", nil); err != nil {
+		t.Fatalf("Could not insert data: %s", err)
+	}
+
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  table: null_test
+  database_url: %v
+  schema:
+    id:
+      type: string
+    nullable_string:
+      type: string
+out:
+  type: bigquery
+  endpoint: %v
+  projectId: test
+  datasetId: dataset1
+  tableId: null_test
+  schema:
+    id:
+      type: string
+    nullable_string:
+      type: string
+`, databaseUrl, bqEndpoint)
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Fatalf("Could not run command: %s", err)
+	}
+
+	table := bqClient.Dataset("dataset1").Table("null_test")
+	it := table.Read(context.Background())
+
+	records := make([]map[string]bigquery.Value, 0)
+	for {
+		var v map[string]bigquery.Value
+		err := it.Next(&v)
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Could not iterate: %s", err)
+		}
+		records = append(records, v)
+	}
+
+	// レコード数の確認
+	assert.Equal(t, 2, len(records))
+
+	// NULL値と非NULL値の確認
+	for _, record := range records {
+		log.Printf("record: %v", record)
+
+		if record["id"] == "1" {
+			assert.Equal(t, "not null", record["nullable_string"])
+		} else if record["id"] == "2" {
+			assert.Nil(t, record["nullable_string"])
+		} else {
+			t.Fatalf("Unexpected id: %v", record["id"])
+		}
+	}
+}
