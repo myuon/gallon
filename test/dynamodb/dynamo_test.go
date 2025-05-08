@@ -543,3 +543,96 @@ out:
 		t.Errorf("Fifth element type mismatch: expected=nested, got=%v", nestedObj["type"])
 	}
 }
+
+func Test_dynamodb_rename_columns(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: dynamodb
+  table: users
+  endpoint: %v
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+      rename: user_name
+    age:
+      type: number
+      rename: user_age
+    created_at:
+      type: number
+      rename: created_timestamp
+    address:
+      type: object
+      properties:
+        street:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+    skills:
+      type: array
+      items:
+        type: object
+        properties:
+          name:
+            type: string
+          level:
+            type: number
+          category:
+            type: string
+out:
+  type: file
+  filepath: ./output_rename.jsonl
+  format: jsonl
+`, endpoint)
+	defer func() {
+		if err := os.Remove("./output_rename.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_rename.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) != 1001 { // 1000 records + empty line at the end
+		t.Errorf("Expected 1001 lines, got %d", len(lines))
+	}
+
+	// リネームされたデータの検証
+	for _, line := range lines[0:10] {
+		if line == "" {
+			continue
+		}
+
+		log.Println(line)
+
+		var data map[string]any
+		if err := json.Unmarshal([]byte(line), &data); err != nil {
+			t.Errorf("Could not unmarshal JSON: %s", err)
+			continue
+		}
+
+		// 基本フィールドのリネーム検証
+		if _, ok := data["id"].(string); !ok {
+			t.Errorf("Expected id to be string, got %T", data["id"])
+		}
+		if _, ok := data["user_name"].(string); !ok {
+			t.Errorf("Expected user_name to be string, got %T", data["user_name"])
+		}
+		if _, ok := data["user_age"].(string); !ok {
+			t.Errorf("Expected user_age to be string, got %T", data["user_age"])
+		}
+		if _, ok := data["created_timestamp"].(string); !ok {
+			t.Errorf("Expected created_timestamp to be string, got %T", data["created_timestamp"])
+		}
+	}
+}

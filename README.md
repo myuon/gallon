@@ -158,10 +158,13 @@ in:
       type: string
     name:
       type: string
+      rename: user_name
     age:
       type: number
+      rename: user_age
     created_at:
       type: number
+      rename: created_timestamp
     profile:
       type: object
       properties:
@@ -182,6 +185,7 @@ in:
 - endpoint: for dynamodb-local (optional)
 - schema
   - type: `string`, `number`, `boolean`, `object`, `array`, `any` are supported
+  - rename: Change column name (optional)
   - properties: for `object` type, define nested fields in `properties` properties
   - items: for `array` type, define item type in `items` properties
 

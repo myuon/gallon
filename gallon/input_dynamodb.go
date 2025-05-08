@@ -109,6 +109,7 @@ type InputPluginDynamoDbConfigSchemaColumn struct {
 	Type       string                                           `yaml:"type"`
 	Properties map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"properties,omitempty"`
 	Items      *InputPluginDynamoDbConfigSchemaColumn           `yaml:"items,omitempty"`
+	Rename     *string                                          `yaml:"rename"`
 }
 
 func (c InputPluginDynamoDbConfigSchemaColumn) getValue(v types.AttributeValue) (any, error) {
@@ -271,7 +272,12 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 					return GallonRecord{}, err
 				}
 
-				record.Set(k, value)
+				columnName := k
+				if schema.Rename != nil {
+					columnName = *schema.Rename
+				}
+
+				record.Set(columnName, value)
 			}
 
 			return record, nil
