@@ -204,6 +204,8 @@ in:
       type: int
     birthday:
       type: time
+    join_date:
+      type: date
     has_partner:
       type: bool
     balance:
@@ -219,7 +221,8 @@ in:
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
   - For MySQL, it should be `user:password@tcp(host:port)/dbname` (See: [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#dsn-data-source-name))
 - schema
-  - type: `string`, `int`, `float`, `decimal`, `time`, `bool`, `json` are supported. NULL are always acceptable.
+  - type: `string`, `int`, `float`, `decimal`, `time`, `date`, `bool`, `json` are supported. NULL are always acceptable.
+    - `date`: Returns YYYY-MM-DD formatted string. If you want to return time.Time object, specify `time` type.
 
 ### Random Input Plugin
 

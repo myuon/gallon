@@ -3,9 +3,11 @@ package parse_time_false
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,7 @@ type UserTable struct {
 	Age        int       `json:"age" fake:"{number:1,100}"`
 	CreatedAt  int64     `json:"createdAt" fake:"{number:949720320,1896491520}"`
 	Birthday   time.Time `json:"birthday"`
+	JoinDate   time.Time `json:"joinDate"`
 	HasPartner *bool     `json:"hasPartner"`
 	Metadata   *string   `json:"metadata"`
 	Balance    float64   `json:"balance" fake:"{price:0,1000}"`
@@ -60,6 +63,7 @@ func NewFakeUserTable() (UserTable, error) {
 	}
 
 	v.Birthday = time.Unix(v.CreatedAt, 0)
+	v.JoinDate = v.Birthday.AddDate(0, 0, 1)
 
 	return v, nil
 }
@@ -79,6 +83,7 @@ func Migrate(db *sql.DB) error {
 		"age INT NOT NULL,",
 		"created_at INT NOT NULL,",
 		"birthday DATETIME NOT NULL,",
+		"join_date DATE NOT NULL,",
 		"has_partner BOOLEAN,",
 		"metadata JSON,",
 		"balance DECIMAL(10,2) NOT NULL,",
@@ -92,7 +97,7 @@ func Migrate(db *sql.DB) error {
 
 	query, err := conn.PrepareContext(
 		ctx,
-		"INSERT INTO users (id, name, age, created_at, birthday, has_partner, metadata, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO users (id, name, age, created_at, birthday, join_date, has_partner, metadata, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return err
@@ -105,7 +110,7 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 
-		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.HasPartner, v.Metadata, v.Balance); err != nil {
+		if _, err := query.Exec(v.ID, v.Name, v.Age, v.CreatedAt, v.Birthday, v.JoinDate, v.HasPartner, v.Metadata, v.Balance); err != nil {
 			return err
 		}
 	}
@@ -244,5 +249,84 @@ out:
 
 	if strings.Count(string(jsonl), "\n") != 1000 {
 		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
+	}
+}
+
+func Test_mysql_to_file_with_date_parse_time_false(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  table: users
+  database_url: %v
+  schema:
+    id:
+      type: string
+    name:
+      type: string
+    age:
+      type: int
+    created_at:
+      type: int
+    birthday:
+      type: time
+    join_date:
+      type: date
+    has_partner:
+      type: bool
+    metadata:
+      type: json
+    balance:
+      type: decimal
+out:
+  type: file
+  filepath: ./output_date_parse_time_false.jsonl
+  format: jsonl
+`, databaseUrl)
+	defer func() {
+		if err := os.Remove("./output_date_parse_time_false.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_date_parse_time_false.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) > 10 {
+		lines = lines[:10]
+	}
+	fmt.Printf("%v\n", strings.Join(lines, "\n"))
+
+	if strings.Count(string(jsonl), "\n") != 1000 {
+		t.Errorf("Expected 1000 lines, got %d", strings.Count(string(jsonl), "\n"))
+	}
+
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Errorf("Failed to parse line %d: %v", i, err)
+			continue
+		}
+
+		joinDate, ok := record["join_date"].(string)
+		if !ok {
+			t.Errorf("join_date is not string in line %d: %v", i, record["join_date"])
+			continue
+		}
+
+		re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+		if !re.MatchString(joinDate) {
+			t.Errorf("join_date is not in YYYY-MM-DD format in line %d: %v", i, joinDate)
+		}
 	}
 }

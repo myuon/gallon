@@ -225,6 +225,23 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 		default:
 			return nil, fmt.Errorf("value is not bool: %v", value)
 		}
+	case "date":
+		b, ok := value.([]byte)
+		if ok {
+			v, err := time.Parse("2006-01-02", string(b))
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse date: %v", err)
+			}
+
+			return v.Format(time.DateOnly), nil
+		}
+
+		v, ok := value.(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("value is not date: %v", value)
+		}
+
+		return v.Format(time.DateOnly), nil
 	case "time":
 		// when parseTime not specified, mysql returns []byte
 		b, ok := value.([]byte)
