@@ -227,7 +227,7 @@ func TestMain(m *testing.M) {
 	bqPort := bqResource.GetPort("9050/tcp")
 	bqEndpoint = fmt.Sprintf("http://localhost:%v", bqPort)
 
-	bqClient, err = bigquery.NewClient(context.Background(), "test", option.WithEndpoint(bqEndpoint))
+	bqClient, err = bigquery.NewClient(context.Background(), "test", option.WithEndpoint(bqEndpoint), option.WithoutAuthentication())
 	if err != nil {
 		log.Fatalf("Could not create BigQuery client: %v", err)
 	}
