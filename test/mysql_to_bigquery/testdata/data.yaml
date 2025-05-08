@@ -1,0 +1,25 @@
+projects:
+  - id: test
+    datasets:
+      - id: dataset1
+        tables:
+          - id: users
+            columns:
+              - name: id
+                type: STRING
+              - name: name
+                type: STRING
+              - name: age
+                type: INTEGER
+              - name: created_at
+                type: INTEGER
+              - name: birthday
+                type: TIMESTAMP
+              - name: join_date
+                type: STRING
+              - name: has_partner
+                type: BOOLEAN
+              - name: metadata
+                type: JSON
+              - name: balance
+                type: FLOAT 

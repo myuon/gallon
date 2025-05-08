@@ -196,12 +196,13 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not construct pool: %s", err)
 	}
 
-	bqResource, err := bqPool.RunWithOptions(
+	resource, err := bqPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Repository:   "ghcr.io/goccy/bigquery-emulator",
 			Tag:          "latest",
-			Cmd:          []string{"--project=test"},
+			Cmd:          []string{"--project=test", "--data-from-yaml=/testdata/data.yaml"},
 			ExposedPorts: []string{"9050/tcp"},
+			Mounts:       []string{fmt.Sprintf("%v/testdata:/testdata", os.Getenv("PWD"))},
 			Platform:     "linux/amd64",
 		},
 		func(config *docker.HostConfig) {
@@ -214,17 +215,17 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
-	if err := bqResource.Expire(2 * 60); err != nil {
+	if err := resource.Expire(2 * 60); err != nil {
 		log.Fatalf("Could not expire resource: %s", err)
 	}
 
 	defer func() {
-		if err := bqPool.Purge(bqResource); err != nil {
+		if err := bqPool.Purge(resource); err != nil {
 			log.Fatalf("Could not purge resource: %s", err)
 		}
 	}()
 
-	bqPort := bqResource.GetPort("9050/tcp")
+	bqPort := resource.GetPort("9050/tcp")
 	bqEndpoint = fmt.Sprintf("http://localhost:%v", bqPort)
 
 	bqClient, err = bigquery.NewClient(context.Background(), "test", option.WithEndpoint(bqEndpoint), option.WithoutAuthentication())
