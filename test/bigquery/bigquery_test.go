@@ -106,7 +106,7 @@ func TestMain(m *testing.M) {
 	port := resource.GetPort("9050/tcp")
 	endpoint = fmt.Sprintf("http://localhost:%v", port)
 
-	client, err = bigquery.NewClient(context.Background(), "test", option.WithEndpoint(endpoint))
+	client, err = bigquery.NewClient(context.Background(), "test", option.WithEndpoint(endpoint), option.WithoutAuthentication())
 	if err != nil {
 		log.Panicf("Could not create client: %v", err)
 	}
