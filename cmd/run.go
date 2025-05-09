@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/myuon/gallon/gallon"
 	"github.com/spf13/cobra"
@@ -78,6 +79,7 @@ func RunGallonWithPath(configPath string, opts RunGallonOptions) error {
 type RunGallonOptions struct {
 	AsTemplate bool
 	WithEnv    bool
+	Logger     *logr.Logger
 }
 
 // RunGallon runs a migration with the given config yaml.
@@ -86,6 +88,7 @@ func RunGallon(configYml []byte) error {
 	return RunGallonWithOptions(configYml, RunGallonOptions{
 		AsTemplate: false,
 		WithEnv:    false,
+		Logger:     nil,
 	})
 }
 
@@ -140,8 +143,15 @@ func RunGallonWithOptions(configYml []byte, opts RunGallonOptions) error {
 		return err
 	}
 
+	var logger logr.Logger
+	if opts.Logger != nil {
+		logger = *opts.Logger
+	} else {
+		logger = zapr.NewLogger(zap.L())
+	}
+
 	g := gallon.Gallon{
-		Logger: zapr.NewLogger(zap.L()),
+		Logger: logger,
 		Input:  input,
 		Output: output,
 	}
