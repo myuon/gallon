@@ -130,18 +130,22 @@ func RunGallonWithOptions(configYml []byte, opts RunGallonOptions) error {
 		return err
 	}
 
-	if sqlInput, ok := input.(*gallon.InputPluginSql); ok {
-		defer func() {
-			if err := sqlInput.CloseConnection(); err != nil {
-				zap.S().Errorw("Failed to close SQL client", "error", err)
-			}
-		}()
-	}
+	defer func() {
+		if err := input.Cleanup(); err != nil {
+			zap.S().Errorw("Failed to cleanup input plugin", "error", err)
+		}
+	}()
 
 	output, err := findOutputPlugin(config.Out.Type, configBytes)
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		if err := output.Cleanup(); err != nil {
+			zap.S().Errorw("Failed to cleanup output plugin", "error", err)
+		}
+	}()
 
 	var logger logr.Logger
 	if opts.Logger != nil {

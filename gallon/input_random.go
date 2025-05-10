@@ -39,6 +39,10 @@ func (p *InputPluginRandom) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *InputPluginRandom) Cleanup() error {
+	return nil
+}
+
 func (p *InputPluginRandom) Extract(
 	ctx context.Context,
 	messages chan []GallonRecord,

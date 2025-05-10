@@ -57,19 +57,25 @@ func (r *GallonRecord) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.asOrderdMap())
 }
 
-type InputPlugin interface {
-	// ReplaceLogger replaces the logger of the plugin.
+type BasePlugin interface {
+	// Extract extracts data from the source and sends it to the messages channel.
 	// It is called in Gallon.Run() at the beginning.
 	ReplaceLogger(logr.Logger)
+	// Cleanup is called in Gallon.Run() at the end.
+	Cleanup() error
+}
+
+type InputPlugin interface {
+	BasePlugin
+
 	// Extract extracts data from the source and sends it to the messages channel.
 	// If an error occurs, send it to the errs channel.
 	Extract(ctx context.Context, messages chan []GallonRecord, errs chan error) error
 }
 
 type OutputPlugin interface {
-	// ReplaceLogger replaces the logger of the plugin.
-	// It is called in Gallon.Run() at the beginning.
-	ReplaceLogger(logr.Logger)
+	BasePlugin
+
 	// Load loads data from the messages channel and sends it to the destination.
 	// If an error occurs, send it to the errs channel.
 	Load(ctx context.Context, messages chan []GallonRecord, errs chan error) error

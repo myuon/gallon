@@ -44,6 +44,10 @@ func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *InputPluginSql) Cleanup() error {
+	return p.client.Close()
+}
+
 func (p *InputPluginSql) Extract(
 	ctx context.Context,
 	messages chan []GallonRecord,

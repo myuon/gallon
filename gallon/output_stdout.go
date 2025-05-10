@@ -28,6 +28,10 @@ func (p *OutputPluginStdout) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *OutputPluginStdout) Cleanup() error {
+	return nil
+}
+
 func (p *OutputPluginStdout) Load(
 	ctx context.Context,
 	messages chan []GallonRecord,

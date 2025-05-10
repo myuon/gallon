@@ -37,6 +37,10 @@ func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *OutputPluginFile) Cleanup() error {
+	return nil
+}
+
 func (p *OutputPluginFile) Load(
 	ctx context.Context,
 	messages chan []GallonRecord,

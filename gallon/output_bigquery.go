@@ -63,6 +63,10 @@ func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *OutputPluginBigQuery) Cleanup() error {
+	return p.client.Close()
+}
+
 func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, tableId string) error {
 	timeout := time.After(300 * time.Second)
 	ticker := time.NewTicker(10 * time.Second)

@@ -39,6 +39,10 @@ func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
 	p.logger = logger
 }
 
+func (p *InputPluginDynamoDb) Cleanup() error {
+	return nil
+}
+
 func (p *InputPluginDynamoDb) Extract(
 	ctx context.Context,
 	messages chan []GallonRecord,

@@ -24,6 +24,10 @@ var _ InputPlugin = &InputPluginStub{}
 func (i InputPluginStub) ReplaceLogger(logger logr.Logger) {
 }
 
+func (i InputPluginStub) Cleanup() error {
+	return nil
+}
+
 func (i InputPluginStub) Extract(
 	ctx context.Context,
 	messages chan []GallonRecord,
