@@ -230,6 +230,10 @@ func Test_dynamo_to_bigquery(t *testing.T) {
 						"level": &types.AttributeValueMemberN{Value: "20"},
 					}},
 				}},
+				"metadata": &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+					"key1": &types.AttributeValueMemberS{Value: "value1"},
+					"key2": &types.AttributeValueMemberS{Value: "value2"},
+				}},
 			},
 		})
 		if err != nil {
@@ -271,6 +275,8 @@ in:
             type: string
           level:
             type: number
+    metadata:
+      type: any
 out:
   type: bigquery
   endpoint: %v
@@ -296,7 +302,9 @@ out:
         country:
           type: string
     skills:
-      type: string
+      type: json
+    metadata:
+      type: json
 `, dynamoEndpoint, endpoint)
 
 	if err := cmd.RunGallon([]byte(configYml)); err != nil {
@@ -358,5 +366,8 @@ out:
 		assert.NotEqual(t, "", address["country"])
 
 		assert.NotEqual(t, "", record["skills"])
+
+		assert.NotEqual(t, "", record["metadata"])
+		assert.NotEqual(t, nil, record["metadata"])
 	}
 }
