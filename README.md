@@ -143,6 +143,16 @@ if err := g.Run(); err != nil {
 }
 ```
 
+You can also use `gallon.RunGallonWithOptions` to run Gallon with options.
+
+```go
+gallon.RunGallonWithOptions(configYml, gallon.RunGallonOptions{
+    AsTemplate: true,
+    WithEnv:    true,
+    Logger:     zapr.NewLogger(zap.L()),
+})
+```
+
 ## Plugin Configurations for YAML
 
 ### DynamoDB Input Plugin
