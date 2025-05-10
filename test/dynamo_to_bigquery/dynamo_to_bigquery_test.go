@@ -215,21 +215,21 @@ func Test_dynamo_to_bigquery(t *testing.T) {
 				"name":       &types.AttributeValueMemberS{Value: fmt.Sprintf("User %d", i)},
 				"age":        &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", rand.Intn(100)+1)},
 				"created_at": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Unix())},
-				// "address": &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
-				// 	"street":  &types.AttributeValueMemberS{Value: "123 Main St"},
-				// 	"city":    &types.AttributeValueMemberS{Value: "Anytown"},
-				// 	"country": &types.AttributeValueMemberS{Value: "USA"},
-				// }},
-				// "skills": &types.AttributeValueMemberL{Value: []types.AttributeValue{
-				// 	&types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
-				// 		"name":  &types.AttributeValueMemberS{Value: "Skill 1"},
-				// 		"level": &types.AttributeValueMemberN{Value: "10"},
-				// 	}},
-				// 	&types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
-				// 		"name":  &types.AttributeValueMemberS{Value: "Skill 2"},
-				// 		"level": &types.AttributeValueMemberN{Value: "20"},
-				// 	}},
-				// }},
+				"address": &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+					"street":  &types.AttributeValueMemberS{Value: "123 Main St"},
+					"city":    &types.AttributeValueMemberS{Value: "Anytown"},
+					"country": &types.AttributeValueMemberS{Value: "USA"},
+				}},
+				"skills": &types.AttributeValueMemberL{Value: []types.AttributeValue{
+					&types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+						"name":  &types.AttributeValueMemberS{Value: "Skill 1"},
+						"level": &types.AttributeValueMemberN{Value: "10"},
+					}},
+					&types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+						"name":  &types.AttributeValueMemberS{Value: "Skill 2"},
+						"level": &types.AttributeValueMemberN{Value: "20"},
+					}},
+				}},
 			},
 		})
 		if err != nil {
@@ -286,17 +286,17 @@ out:
       type: integer
     created_at:
       type: integer
-#    address:
-#      type: record
-#      fields:
-#        street:
-#          type: string
-#        city:
-#          type: string
-#        country:
-#          type: string
-#    skills:
-#      type: string
+    address:
+      type: record
+      fields:
+        street:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+    skills:
+      type: string
 `, dynamoEndpoint, endpoint)
 
 	if err := cmd.RunGallon([]byte(configYml)); err != nil {
@@ -324,10 +324,10 @@ out:
 	it := table.Read(context.Background())
 
 	count := 0
-	recordSamples := []UserTable{}
+	recordSamples := []map[string]bigquery.Value{}
 
 	for {
-		var v UserTable
+		var v map[string]bigquery.Value
 		err := it.Next(&v)
 		if errors.Is(err, iterator.Done) {
 			break
@@ -345,11 +345,18 @@ out:
 	assert.Equal(t, 100, count)
 
 	for _, record := range recordSamples {
-		_, err := uuid.Parse(record.ID)
+		_, err := uuid.Parse(record["id"].(string))
 		assert.Nil(t, err)
 
-		assert.NotEqual(t, "", record.Name)
-		assert.NotEqual(t, 0, record.Age)
-		assert.NotEqual(t, int64(0), record.CreatedAt)
+		assert.NotEqual(t, "", record["name"])
+		assert.NotEqual(t, 0, record["age"])
+		assert.NotEqual(t, int64(0), record["created_at"])
+
+		address := record["address"].(map[string]bigquery.Value)
+		assert.NotEqual(t, "", address["street"])
+		assert.NotEqual(t, "", address["city"])
+		assert.NotEqual(t, "", address["country"])
+
+		assert.NotEqual(t, "", record["skills"])
 	}
 }

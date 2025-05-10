@@ -13,3 +13,14 @@ projects:
                 type: INTEGER
               - name: created_at
                 type: INTEGER
+              - name: address
+                type: RECORD
+                fields:
+                  - name: street
+                    type: STRING
+                  - name: city
+                    type: STRING
+                  - name: country
+                    type: STRING
+              - name: skills
+                type: STRING

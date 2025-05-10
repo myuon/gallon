@@ -293,10 +293,12 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 						values = append(values, nil)
 						continue
 					}
+
 					recordValue, err := deserializeRecord(value.(map[string]any), v.Schema)
 					if err != nil {
 						return nil, err
 					}
+
 					values = append(values, recordValue)
 				} else if v.Type == bigquery.StringFieldType {
 					// If the field is a string, and the value is a JSON object, we need to deserialize it
@@ -323,22 +325,22 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 	), nil
 }
 
-func deserializeRecord(data map[string]any, schema bigquery.Schema) ([]bigquery.Value, error) {
-	values := []bigquery.Value{}
+func deserializeRecord(data map[string]any, schema bigquery.Schema) (map[string]bigquery.Value, error) {
+	values := map[string]bigquery.Value{}
 	for _, field := range schema {
 		value := data[field.Name]
 		if field.Type == bigquery.RecordFieldType {
 			if value == nil {
-				values = append(values, nil)
+				values[field.Name] = nil
 				continue
 			}
 			recordValue, err := deserializeRecord(value.(map[string]any), field.Schema)
 			if err != nil {
 				return nil, err
 			}
-			values = append(values, recordValue)
+			values[field.Name] = recordValue
 		} else {
-			values = append(values, value)
+			values[field.Name] = value
 		}
 	}
 	return values, nil
