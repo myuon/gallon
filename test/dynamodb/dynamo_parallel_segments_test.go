@@ -1,6 +1,15 @@
 package dynamodb
 
-/*
+import (
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/myuon/gallon/cmd"
+)
+
 func Test_dynamodb_parallel_segments_2_segments(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping parallel segments test in short mode")
@@ -158,9 +167,9 @@ func Test_dynamodb_parallel_segments_performance_comparison(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
+		name          string
 		totalSegments int32
-		outputFile   string
+		outputFile    string
 	}{
 		{"single_segment", 1, "./perf_1_segment.jsonl"},
 		{"two_segments", 2, "./perf_2_segments.jsonl"},
@@ -252,4 +261,3 @@ out:
 		}
 	}
 }
-*/
