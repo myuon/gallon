@@ -79,7 +79,7 @@ loop:
 			break loop
 		default:
 			resp, err := p.client.Scan(
-				context.TODO(),
+				ctx,
 				&dynamodb.ScanInput{
 					TableName:         aws.String(p.tableName),
 					ExclusiveStartKey: lastEvaluatedKey,
