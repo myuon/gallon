@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -15,21 +16,27 @@ import (
 )
 
 type InputPluginDynamoDb struct {
-	logger    logr.Logger
-	client    *dynamodb.Client
-	tableName string
-	serialize func(map[string]types.AttributeValue) (GallonRecord, error)
+	logger       logr.Logger
+	client       *dynamodb.Client
+	tableName    string
+	serialize    func(map[string]types.AttributeValue) (GallonRecord, error)
+	totalSegments int32
 }
 
 func NewInputPluginDynamoDb(
 	client *dynamodb.Client,
 	tableName string,
 	serialize func(map[string]types.AttributeValue) (GallonRecord, error),
+	totalSegments int32,
 ) *InputPluginDynamoDb {
+	if totalSegments <= 0 {
+		totalSegments = 1 // Default to single segment if not specified
+	}
 	return &InputPluginDynamoDb{
-		client:    client,
-		tableName: tableName,
-		serialize: serialize,
+		client:       client,
+		tableName:    tableName,
+		serialize:    serialize,
+		totalSegments: totalSegments,
 	}
 }
 
@@ -44,6 +51,17 @@ func (p *InputPluginDynamoDb) Cleanup() error {
 }
 
 func (p *InputPluginDynamoDb) Extract(
+	ctx context.Context,
+	messages chan []GallonRecord,
+	errs chan error,
+) error {
+	if p.totalSegments == 1 {
+		return p.extractSingleSegment(ctx, messages, errs)
+	}
+	return p.extractParallelSegments(ctx, messages, errs)
+}
+
+func (p *InputPluginDynamoDb) extractSingleSegment(
 	ctx context.Context,
 	messages chan []GallonRecord,
 	errs chan error,
@@ -102,11 +120,162 @@ loop:
 	return nil
 }
 
+type segmentResult struct {
+	segment int32
+	records []GallonRecord
+	err     error
+}
+
+func (p *InputPluginDynamoDb) extractParallelSegments(
+	ctx context.Context,
+	messages chan []GallonRecord,
+	errs chan error,
+) error {
+	p.logger.Info(fmt.Sprintf("starting parallel scan with %d segments", p.totalSegments))
+
+	// Channel to collect results from all segments
+	segmentResults := make(chan segmentResult, p.totalSegments*10)
+	var wg sync.WaitGroup
+
+	// Start one goroutine per segment
+	for segment := int32(0); segment < p.totalSegments; segment++ {
+		wg.Add(1)
+		go func(segmentID int32) {
+			defer wg.Done()
+			p.scanSegment(ctx, segmentID, segmentResults)
+		}(segment)
+	}
+
+	// Close results channel when all segments are done
+	go func() {
+		wg.Wait()
+		close(segmentResults)
+	}()
+
+	// Process results in order and send to messages channel
+	extractedTotal := 0
+	segmentBatches := make(map[int32][][]GallonRecord)
+	nextExpectedSegment := int32(0)
+
+	for result := range segmentResults {
+		if result.err != nil {
+			errs <- result.err
+			continue
+		}
+
+		// Group records by segment
+		if result.records != nil && len(result.records) > 0 {
+			if _, exists := segmentBatches[result.segment]; !exists {
+				segmentBatches[result.segment] = make([][]GallonRecord, 0)
+			}
+			segmentBatches[result.segment] = append(segmentBatches[result.segment], result.records)
+		}
+
+		// Send records in segment order when possible
+		for {
+			if batches, exists := segmentBatches[nextExpectedSegment]; exists && len(batches) > 0 {
+				// Send first batch from this segment
+				batch := batches[0]
+				segmentBatches[nextExpectedSegment] = batches[1:]
+				
+				messages <- batch
+				extractedTotal += len(batch)
+				p.logger.Info(fmt.Sprintf("extracted %d records (segment %d)", extractedTotal, nextExpectedSegment))
+
+				// If this segment is empty, move to next segment
+				if len(segmentBatches[nextExpectedSegment]) == 0 {
+					delete(segmentBatches, nextExpectedSegment)
+					nextExpectedSegment = (nextExpectedSegment + 1) % p.totalSegments
+				}
+			} else {
+				break
+			}
+		}
+	}
+
+	// Send any remaining batches (in case segments finished out of order)
+	for segment := int32(0); segment < p.totalSegments; segment++ {
+		if batches, exists := segmentBatches[segment]; exists {
+			for _, batch := range batches {
+				messages <- batch
+				extractedTotal += len(batch)
+				p.logger.Info(fmt.Sprintf("extracted %d records (final segment %d)", extractedTotal, segment))
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *InputPluginDynamoDb) scanSegment(
+	ctx context.Context,
+	segment int32,
+	results chan<- segmentResult,
+) {
+	hasNext := true
+	lastEvaluatedKey := map[string]types.AttributeValue(nil)
+
+	for hasNext {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			resp, err := p.client.Scan(
+				ctx,
+				&dynamodb.ScanInput{
+					TableName:         aws.String(p.tableName),
+					ExclusiveStartKey: lastEvaluatedKey,
+					Limit:             aws.Int32(100),
+					TotalSegments:     aws.Int32(p.totalSegments),
+					Segment:           aws.Int32(segment),
+				},
+			)
+			if err != nil {
+				results <- segmentResult{
+					segment: segment,
+					err:     fmt.Errorf("failed to scan segment %d of table %s: %w", segment, p.tableName, err),
+				}
+				return
+			}
+
+			if resp.LastEvaluatedKey != nil {
+				hasNext = true
+				lastEvaluatedKey = resp.LastEvaluatedKey
+			} else {
+				hasNext = false
+			}
+
+			if len(resp.Items) > 0 {
+				var msgs []GallonRecord
+				for _, item := range resp.Items {
+					record, err := p.serialize(item)
+					if err != nil {
+						results <- segmentResult{
+							segment: segment,
+							err:     fmt.Errorf("failed to serialize record in segment %d: %w", segment, err),
+						}
+						continue
+					}
+					msgs = append(msgs, record)
+				}
+
+				if len(msgs) > 0 {
+					results <- segmentResult{
+						segment: segment,
+						records: msgs,
+					}
+				}
+			}
+		}
+	}
+}
+
 type InputPluginDynamoDbConfig struct {
-	Table    string                                           `yaml:"table"`
-	Schema   map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
-	Region   string                                           `yaml:"region"`
-	Endpoint *string                                          `yaml:"endpoint"`
+	Table         string                                           `yaml:"table"`
+	Schema        map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
+	Region        string                                           `yaml:"region"`
+	Endpoint      *string                                          `yaml:"endpoint"`
+	TotalSegments *int32                                           `yaml:"totalSegments,omitempty"`
 }
 
 type InputPluginDynamoDbConfigSchemaColumn struct {
@@ -259,6 +428,11 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 		return nil, fmt.Errorf("table_name is required")
 	}
 
+	totalSegments := int32(1)
+	if dbConfig.TotalSegments != nil {
+		totalSegments = *dbConfig.TotalSegments
+	}
+
 	return NewInputPluginDynamoDb(
 		client,
 		dbConfig.Table,
@@ -286,5 +460,6 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 
 			return record, nil
 		},
+		totalSegments,
 	), nil
 }
