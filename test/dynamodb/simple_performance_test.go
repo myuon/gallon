@@ -1,6 +1,15 @@
 package dynamodb
 
-/*
+import (
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/myuon/gallon/cmd"
+	"github.com/neilotoole/slogt"
+)
+
 // Simple performance comparison without Go benchmark framework
 func TestDynamoDBPerformanceComparison(t *testing.T) {
 	// Setup: Ensure large dataset exists
@@ -54,7 +63,9 @@ out:
 
 		// Run test and measure time
 		startTime := time.Now()
-		if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+			Logger: slogt.New(t),
+		}); err != nil {
 			t.Fatalf("Could not run command for %s: %s", tc.name, err)
 		}
 		duration := time.Since(startTime)
@@ -102,4 +113,3 @@ out:
 		}
 	}
 }
-*/
