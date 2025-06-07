@@ -12,7 +12,6 @@ import (
 
 	"log/slog"
 
-	"github.com/go-logr/logr"
 	"github.com/myuon/gallon/gallon"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -80,7 +79,7 @@ func RunGallonWithPath(configPath string, opts RunGallonOptions) error {
 type RunGallonOptions struct {
 	AsTemplate bool
 	WithEnv    bool
-	Logger     *logr.Logger
+	Logger     *slog.Logger
 }
 
 // RunGallon runs a migration with the given config yaml.
@@ -150,10 +149,9 @@ func RunGallonWithOptions(configYml []byte, opts RunGallonOptions) error {
 
 	var logger *slog.Logger
 	if opts.Logger != nil {
-		// 既存のlogr.Loggerからslog.Loggerを生成する方法はないので、デフォルトのslog.Loggerを使う
-		logger = slog.Default()
+		logger = opts.Logger
 	} else {
-		logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 
 	g := gallon.Gallon{
