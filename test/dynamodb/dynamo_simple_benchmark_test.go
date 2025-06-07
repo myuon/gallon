@@ -1,6 +1,14 @@
 package dynamodb
 
-/*
+import (
+	"fmt"
+	"os"
+	"testing"
+
+	"github.com/myuon/gallon/cmd"
+	"github.com/neilotoole/slogt"
+)
+
 // BenchmarkDynamoDBScanComparison_Quick runs a quick comparison between different segment counts
 func BenchmarkDynamoDBScanComparison_Quick(b *testing.B) {
 	// Setup: Ensure large dataset exists (run once)
@@ -50,7 +58,9 @@ out:
 
 			// Run the benchmark
 			for i := 0; i < b.N; i++ {
-				if err := cmd.RunGallon([]byte(configYml)); err != nil {
+				if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+					Logger: slogt.New(b),
+				}); err != nil {
 					b.Fatalf("Could not run command: %s", err)
 				}
 			}
@@ -103,7 +113,9 @@ out:
 
 	// Run the benchmark
 	for i := 0; i < b.N; i++ {
-		if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+			Logger: slogt.New(b),
+		}); err != nil {
 			b.Fatalf("Could not run command: %s", err)
 		}
 	}
@@ -146,7 +158,9 @@ out:
 
 	// Run the benchmark
 	for i := 0; i < b.N; i++ {
-		if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+			Logger: slogt.New(b),
+		}); err != nil {
 			b.Fatalf("Could not run command: %s", err)
 		}
 	}
@@ -189,9 +203,10 @@ out:
 
 	// Run the benchmark
 	for i := 0; i < b.N; i++ {
-		if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+			Logger: slogt.New(b),
+		}); err != nil {
 			b.Fatalf("Could not run command: %s", err)
 		}
 	}
 }
-*/
