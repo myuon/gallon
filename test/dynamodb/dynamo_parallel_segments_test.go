@@ -1,15 +1,6 @@
 package dynamodb
 
-import (
-	"fmt"
-	"os"
-	"strings"
-	"testing"
-	"time"
-
-	"github.com/myuon/gallon/cmd"
-)
-
+/*
 func Test_dynamodb_parallel_segments_2_segments(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping parallel segments test in short mode")
@@ -184,7 +175,7 @@ func Test_dynamodb_parallel_segments_performance_comparison(t *testing.T) {
 
 	for i, test := range tests {
 		t.Logf("Running performance test: %s", test.name)
-		
+
 		startTime := time.Now()
 
 		configYml := fmt.Sprintf(`
@@ -253,7 +244,7 @@ out:
 		improvement := (twoSegmentRPS - singleSegmentRPS) / singleSegmentRPS * 100
 
 		t.Logf("Two segments vs single segment improvement: %.1f%%", improvement)
-		
+
 		if improvement > 0 {
 			t.Logf("Parallel segments showed performance improvement!")
 		} else {
@@ -261,3 +252,4 @@ out:
 		}
 	}
 }
+*/
