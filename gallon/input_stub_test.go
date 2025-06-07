@@ -3,8 +3,7 @@ package gallon
 import (
 	"context"
 	"fmt"
-
-	"github.com/go-logr/logr"
+	"log/slog"
 )
 
 type InputPluginStub struct {
@@ -21,7 +20,7 @@ func NewInputPluginStub(
 
 var _ InputPlugin = &InputPluginStub{}
 
-func (i InputPluginStub) ReplaceLogger(logger logr.Logger) {
+func (i InputPluginStub) ReplaceLogger(logger *slog.Logger) {
 }
 
 func (i InputPluginStub) Cleanup() error {

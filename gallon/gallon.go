@@ -10,8 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 
-	"github.com/go-logr/logr"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
@@ -60,7 +60,7 @@ func (r *GallonRecord) MarshalJSON() ([]byte, error) {
 type BasePlugin interface {
 	// Extract extracts data from the source and sends it to the messages channel.
 	// It is called in Gallon.Run() at the beginning.
-	ReplaceLogger(logr.Logger)
+	ReplaceLogger(*slog.Logger)
 	// Cleanup is called in Gallon.Run() at the end.
 	Cleanup() error
 }
@@ -84,7 +84,7 @@ type OutputPlugin interface {
 // Gallon is a struct that runs a migration.
 type Gallon struct {
 	// Logger will be used for logging. For gallon-cli, zap logger (and the `logr.Logger` interface of it) is used.
-	Logger logr.Logger
+	Logger *slog.Logger
 	Input  InputPlugin
 	Output OutputPlugin
 }
@@ -114,7 +114,7 @@ func (g *Gallon) Run(ctx context.Context) error {
 		g.Logger.Info("start extract")
 
 		if err := g.Input.Extract(ctx, messages, errs); err != nil {
-			g.Logger.Error(err, "failed to extract")
+			g.Logger.Error("failed to extract", "error", err)
 		}
 	}(ctx)
 
@@ -128,7 +128,7 @@ func (g *Gallon) Run(ctx context.Context) error {
 		g.Logger.Info("start load")
 
 		if err := g.Output.Load(ctx, messages, errs); err != nil {
-			g.Logger.Error(err, "failed to load")
+			g.Logger.Error("failed to load", "error", err)
 		}
 	}(ctx)
 
@@ -140,12 +140,12 @@ func (g *Gallon) Run(ctx context.Context) error {
 			case err := <-errs:
 				if err != nil {
 					errorCount++
-					g.Logger.Error(err, "error in gallon", "errorCount", errorCount)
+					g.Logger.Error("error in gallon", "error", err, "errorCount", errorCount)
 				}
 
 				if errorCount > tooManyErrorsLimit {
 					cancel(ErrTooManyErrors)
-					g.Logger.Error(ErrTooManyErrors, "quit", "errorCount", errorCount)
+					g.Logger.Error("quit", "error", ErrTooManyErrors, "errorCount", errorCount)
 					return
 				}
 			}

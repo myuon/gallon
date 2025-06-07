@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"cloud.google.com/go/bigquery"
-	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/api/option"
@@ -19,7 +20,7 @@ import (
 )
 
 type OutputPluginBigQuery struct {
-	logger               logr.Logger
+	logger               *slog.Logger
 	client               *bigquery.Client
 	endpoint             *string
 	datasetId            string
@@ -59,7 +60,7 @@ func (w bqRecordWrapper) Save() (row map[string]bigquery.Value, insertID string,
 
 var _ OutputPlugin = &OutputPluginBigQuery{}
 
-func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
+func (p *OutputPluginBigQuery) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 
@@ -76,7 +77,7 @@ func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, table
 			return fmt.Errorf("timeout while waiting for table %v to be created", p.tableId)
 		case <-ticker.C:
 			if meta, err := p.client.Dataset(p.datasetId).Table(tableId).Metadata(ctx); err != nil {
-				p.logger.Info(fmt.Sprintf("waiting for table %v to be created, %v", p.tableId, meta))
+				p.logger.Info("waiting for table to be created", slog.String("tableId", p.tableId), slog.Any("metadata", meta))
 				continue
 			}
 
@@ -95,15 +96,16 @@ func (p *OutputPluginBigQuery) Load(
 	if err := temporaryTable.Create(ctx, &bigquery.TableMetadata{
 		Schema: p.schema,
 	}); err != nil {
+		p.logger.Error("failed to create table", slog.Any("error", err))
 		return err
 	}
 
 	defer func() {
 		if p.deleteTemporaryTable {
 			if err := temporaryTable.Delete(ctx); err != nil {
-				p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
+				p.logger.Error("failed to delete temporary table", slog.String("tableId", temporaryTable.TableID), slog.Any("error", err))
 			} else {
-				p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
+				p.logger.Info("temporary table deleted", slog.String("tableId", temporaryTable.TableID))
 			}
 		}
 	}()
@@ -112,7 +114,7 @@ func (p *OutputPluginBigQuery) Load(
 		return err
 	}
 
-	p.logger.Info(fmt.Sprintf("created temporary table %v", temporaryTable.TableID))
+	p.logger.Info("created temporary table", slog.String("tableId", temporaryTable.TableID))
 
 	loadedTotal := 0
 
@@ -123,7 +125,7 @@ func (p *OutputPluginBigQuery) Load(
 	}
 	defer func() {
 		if err := os.Remove(temporaryFile.Name()); err != nil {
-			p.logger.Error(err, "failed to remove temporary file", "path", temporaryFile.Name())
+			p.logger.Error("failed to remove temporary file", slog.String("path", temporaryFile.Name()), slog.Any("error", err))
 		}
 	}()
 
@@ -160,7 +162,7 @@ loop:
 
 			if len(msgs) > 0 {
 				loadedTotal += len(msgs)
-				p.logger.Info(fmt.Sprintf("loaded %v rows", loadedTotal))
+				p.logger.Info("loaded rows", slog.Int("count", loadedTotal))
 			}
 		}
 	}
@@ -173,21 +175,21 @@ loop:
 		return fmt.Errorf("failed to close temporary file: %v", err)
 	}
 
-	p.logger.Info(fmt.Sprintf("loading into %v", temporaryTable.TableID))
+	p.logger.Info("loading into table", slog.String("tableId", temporaryTable.TableID))
 
 	temporaryFile, err = os.Open(temporaryFile.Name())
 	if err != nil {
 		return fmt.Errorf("failed to open temporary file: %v", err)
 	}
 
-	p.logger.Info(fmt.Sprintf("opened temporary file %v", temporaryFile.Name()))
+	p.logger.Info("opened temporary file", slog.String("path", temporaryFile.Name()))
 
 	reader, err := gzip.NewReader(temporaryFile)
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %v", err)
 	}
 
-	p.logger.Info(fmt.Sprintf("created gzip reader"))
+	p.logger.Info("created gzip reader")
 
 	source := bigquery.NewReaderSource(reader)
 	source.SourceFormat = bigquery.JSON
@@ -198,6 +200,7 @@ loop:
 
 	job, err := loader.Run(ctx)
 	if err != nil {
+		p.logger.Error("failed to load data", slog.Any("error", err))
 		return fmt.Errorf("failed to load: %v", err)
 	}
 	status, err := job.Wait(ctx)
@@ -208,7 +211,7 @@ loop:
 		return fmt.Errorf("job failed: %v (details: %v)", err, status.Errors)
 	}
 
-	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
+	p.logger.Info("loaded into table", slog.String("tableId", temporaryTable.TableID))
 
 	// NOTE: CopierFrom is not supported by bigquery-emulator
 	// copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
@@ -229,7 +232,7 @@ loop:
 		return fmt.Errorf("job failed: %v", err)
 	}
 
-	p.logger.Info(fmt.Sprintf("copied from %v to %v", temporaryTable.TableID, p.tableId))
+	p.logger.Info("copied from table to table", slog.String("fromTableId", temporaryTable.TableID), slog.String("toTableId", p.tableId))
 
 	return nil
 }

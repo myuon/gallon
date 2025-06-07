@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"log/slog"
+
 	"github.com/brianvoe/gofakeit/v7"
-	"github.com/go-logr/logr"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -15,7 +16,7 @@ import (
 )
 
 type InputPluginRandom struct {
-	logger    logr.Logger
+	logger    *slog.Logger
 	pageSize  int
 	pageLimit int
 	generate  func(int) (GallonRecord, error)
@@ -35,7 +36,7 @@ func NewInputPluginRandom(
 
 var _ InputPlugin = &InputPluginRandom{}
 
-func (p *InputPluginRandom) ReplaceLogger(logger logr.Logger) {
+func (p *InputPluginRandom) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 

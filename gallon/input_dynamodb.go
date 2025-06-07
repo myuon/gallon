@@ -4,38 +4,46 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
+
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 )
 
 type InputPluginDynamoDb struct {
-	logger    logr.Logger
-	client    *dynamodb.Client
-	tableName string
-	serialize func(map[string]types.AttributeValue) (GallonRecord, error)
+	logger        *slog.Logger
+	client        *dynamodb.Client
+	tableName     string
+	serialize     func(map[string]types.AttributeValue) (GallonRecord, error)
+	totalSegments int32
 }
 
 func NewInputPluginDynamoDb(
 	client *dynamodb.Client,
 	tableName string,
 	serialize func(map[string]types.AttributeValue) (GallonRecord, error),
+	totalSegments int32,
 ) *InputPluginDynamoDb {
+	if totalSegments <= 0 {
+		totalSegments = 1 // Default to single segment if not specified
+	}
 	return &InputPluginDynamoDb{
-		client:    client,
-		tableName: tableName,
-		serialize: serialize,
+		client:        client,
+		tableName:     tableName,
+		serialize:     serialize,
+		totalSegments: totalSegments,
 	}
 }
 
 var _ InputPlugin = &InputPluginDynamoDb{}
 
-func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
+func (p *InputPluginDynamoDb) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 
@@ -44,6 +52,17 @@ func (p *InputPluginDynamoDb) Cleanup() error {
 }
 
 func (p *InputPluginDynamoDb) Extract(
+	ctx context.Context,
+	messages chan []GallonRecord,
+	errs chan error,
+) error {
+	if p.totalSegments == 1 {
+		return p.extractSingleSegment(ctx, messages, errs)
+	}
+	return p.extractParallelSegments(ctx, messages, errs)
+}
+
+func (p *InputPluginDynamoDb) extractSingleSegment(
 	ctx context.Context,
 	messages chan []GallonRecord,
 	errs chan error,
@@ -60,7 +79,7 @@ loop:
 			break loop
 		default:
 			resp, err := p.client.Scan(
-				context.TODO(),
+				ctx,
 				&dynamodb.ScanInput{
 					TableName:         aws.String(p.tableName),
 					ExclusiveStartKey: lastEvaluatedKey,
@@ -102,11 +121,125 @@ loop:
 	return nil
 }
 
+type segmentResult struct {
+	segment int32
+	records []GallonRecord
+	err     error
+}
+
+func (p *InputPluginDynamoDb) extractParallelSegments(
+	ctx context.Context,
+	messages chan []GallonRecord,
+	errs chan error,
+) error {
+	p.logger.Info(fmt.Sprintf("starting parallel scan with %d segments", p.totalSegments))
+
+	// Channel to collect results from all segments
+	segmentResults := make(chan segmentResult, p.totalSegments*10)
+	var wg sync.WaitGroup
+
+	// Start one goroutine per segment
+	for segment := int32(0); segment < p.totalSegments; segment++ {
+		wg.Add(1)
+		go func(segmentID int32) {
+			defer wg.Done()
+			p.scanSegment(ctx, segmentID, segmentResults)
+		}(segment)
+	}
+
+	// Close results channel when all segments are done
+	go func() {
+		wg.Wait()
+		close(segmentResults)
+	}()
+
+	// Process results as they arrive
+	extractedTotal := 0
+	for result := range segmentResults {
+		if result.err != nil {
+			errs <- result.err
+			continue
+		}
+
+		if result.records != nil && len(result.records) > 0 {
+			messages <- result.records
+			extractedTotal += len(result.records)
+			p.logger.Info(fmt.Sprintf("extracted %d records (segment %d)", extractedTotal, result.segment))
+		}
+	}
+
+	return nil
+}
+
+func (p *InputPluginDynamoDb) scanSegment(
+	ctx context.Context,
+	segment int32,
+	results chan<- segmentResult,
+) {
+	hasNext := true
+	lastEvaluatedKey := map[string]types.AttributeValue(nil)
+
+	for hasNext {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			resp, err := p.client.Scan(
+				ctx,
+				&dynamodb.ScanInput{
+					TableName:         aws.String(p.tableName),
+					ExclusiveStartKey: lastEvaluatedKey,
+					Limit:             aws.Int32(100),
+					TotalSegments:     aws.Int32(p.totalSegments),
+					Segment:           aws.Int32(segment),
+				},
+			)
+			if err != nil {
+				results <- segmentResult{
+					segment: segment,
+					err:     fmt.Errorf("failed to scan segment %d of table %s: %w", segment, p.tableName, err),
+				}
+				return
+			}
+
+			if resp.LastEvaluatedKey != nil {
+				hasNext = true
+				lastEvaluatedKey = resp.LastEvaluatedKey
+			} else {
+				hasNext = false
+			}
+
+			if len(resp.Items) > 0 {
+				var msgs []GallonRecord
+				for _, item := range resp.Items {
+					record, err := p.serialize(item)
+					if err != nil {
+						results <- segmentResult{
+							segment: segment,
+							err:     fmt.Errorf("failed to serialize record in segment %d: %w", segment, err),
+						}
+						continue
+					}
+					msgs = append(msgs, record)
+				}
+
+				if len(msgs) > 0 {
+					results <- segmentResult{
+						segment: segment,
+						records: msgs,
+					}
+				}
+			}
+		}
+	}
+}
+
 type InputPluginDynamoDbConfig struct {
-	Table    string                                           `yaml:"table"`
-	Schema   map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
-	Region   string                                           `yaml:"region"`
-	Endpoint *string                                          `yaml:"endpoint"`
+	Table         string                                           `yaml:"table"`
+	Schema        map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
+	Region        string                                           `yaml:"region"`
+	Endpoint      *string                                          `yaml:"endpoint"`
+	TotalSegments *int32                                           `yaml:"totalSegments,omitempty"`
 }
 
 type InputPluginDynamoDbConfigSchemaColumn struct {
@@ -259,6 +392,11 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 		return nil, fmt.Errorf("table_name is required")
 	}
 
+	totalSegments := int32(1)
+	if dbConfig.TotalSegments != nil {
+		totalSegments = *dbConfig.TotalSegments
+	}
+
 	return NewInputPluginDynamoDb(
 		client,
 		dbConfig.Table,
@@ -286,5 +424,6 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 
 			return record, nil
 		},
+		totalSegments,
 	), nil
 }

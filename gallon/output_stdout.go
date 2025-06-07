@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
-	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 )
 
 type OutputPluginStdout struct {
-	logger      logr.Logger
+	logger      *slog.Logger
 	deserialize func(GallonRecord) ([]byte, error)
 }
 
@@ -24,7 +24,7 @@ func NewOutputPluginStdout(
 
 var _ OutputPlugin = &OutputPluginStdout{}
 
-func (p *OutputPluginStdout) ReplaceLogger(logger logr.Logger) {
+func (p *OutputPluginStdout) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 
@@ -62,12 +62,12 @@ loop:
 
 			if len(msgs) > 0 {
 				loadedTotal += len(msgs)
-				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+				p.logger.Info("loaded records", slog.Int("count", loadedTotal))
 			}
 		}
 	}
 
-	p.logger.Info(fmt.Sprintf("loaded total: %v", loadedTotal))
+	p.logger.Info("loaded total", slog.Int("count", loadedTotal))
 
 	return nil
 }
