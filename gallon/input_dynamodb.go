@@ -153,55 +153,18 @@ func (p *InputPluginDynamoDb) extractParallelSegments(
 		close(segmentResults)
 	}()
 
-	// Process results in order and send to messages channel
+	// Process results as they arrive
 	extractedTotal := 0
-	segmentBatches := make(map[int32][][]GallonRecord)
-	nextExpectedSegment := int32(0)
-
 	for result := range segmentResults {
 		if result.err != nil {
 			errs <- result.err
 			continue
 		}
 
-		// Group records by segment
 		if result.records != nil && len(result.records) > 0 {
-			if _, exists := segmentBatches[result.segment]; !exists {
-				segmentBatches[result.segment] = make([][]GallonRecord, 0)
-			}
-			segmentBatches[result.segment] = append(segmentBatches[result.segment], result.records)
-		}
-
-		// Send records in segment order when possible
-		for {
-			if batches, exists := segmentBatches[nextExpectedSegment]; exists && len(batches) > 0 {
-				// Send first batch from this segment
-				batch := batches[0]
-				segmentBatches[nextExpectedSegment] = batches[1:]
-
-				messages <- batch
-				extractedTotal += len(batch)
-				p.logger.Info(fmt.Sprintf("extracted %d records (segment %d)", extractedTotal, nextExpectedSegment))
-
-				// If this segment is empty, move to next segment
-				if len(segmentBatches[nextExpectedSegment]) == 0 {
-					delete(segmentBatches, nextExpectedSegment)
-					nextExpectedSegment = (nextExpectedSegment + 1) % p.totalSegments
-				}
-			} else {
-				break
-			}
-		}
-	}
-
-	// Send any remaining batches (in case segments finished out of order)
-	for segment := int32(0); segment < p.totalSegments; segment++ {
-		if batches, exists := segmentBatches[segment]; exists {
-			for _, batch := range batches {
-				messages <- batch
-				extractedTotal += len(batch)
-				p.logger.Info(fmt.Sprintf("extracted %d records (final segment %d)", extractedTotal, segment))
-			}
+			messages <- result.records
+			extractedTotal += len(result.records)
+			p.logger.Info(fmt.Sprintf("extracted %d records (segment %d)", extractedTotal, result.segment))
 		}
 	}
 
