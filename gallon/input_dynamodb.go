@@ -6,20 +6,21 @@ import (
 	"strconv"
 	"sync"
 
+	"log/slog"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 )
 
 type InputPluginDynamoDb struct {
-	logger       logr.Logger
-	client       *dynamodb.Client
-	tableName    string
-	serialize    func(map[string]types.AttributeValue) (GallonRecord, error)
+	logger        *slog.Logger
+	client        *dynamodb.Client
+	tableName     string
+	serialize     func(map[string]types.AttributeValue) (GallonRecord, error)
 	totalSegments int32
 }
 
@@ -33,16 +34,16 @@ func NewInputPluginDynamoDb(
 		totalSegments = 1 // Default to single segment if not specified
 	}
 	return &InputPluginDynamoDb{
-		client:       client,
-		tableName:    tableName,
-		serialize:    serialize,
+		client:        client,
+		tableName:     tableName,
+		serialize:     serialize,
 		totalSegments: totalSegments,
 	}
 }
 
 var _ InputPlugin = &InputPluginDynamoDb{}
 
-func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
+func (p *InputPluginDynamoDb) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 
@@ -177,7 +178,7 @@ func (p *InputPluginDynamoDb) extractParallelSegments(
 				// Send first batch from this segment
 				batch := batches[0]
 				segmentBatches[nextExpectedSegment] = batches[1:]
-				
+
 				messages <- batch
 				extractedTotal += len(batch)
 				p.logger.Info(fmt.Sprintf("extracted %d records (segment %d)", extractedTotal, nextExpectedSegment))

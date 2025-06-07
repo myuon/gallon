@@ -7,12 +7,12 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-logr/zapr"
+	"log/slog"
+
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
-var logger = zapr.NewLogger(zap.Must(zap.NewDevelopment()))
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type BufioWriteCloser struct {
 	*bufio.Writer

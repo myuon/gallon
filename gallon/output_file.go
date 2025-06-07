@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 )
 
 type OutputPluginFile struct {
-	logger      logr.Logger
+	logger      *slog.Logger
 	deserialize func(GallonRecord) ([]byte, error)
 	newWriter   func() (io.WriteCloser, error)
 }
@@ -33,7 +33,7 @@ func NewOutputPluginFile(
 
 var _ OutputPlugin = &OutputPluginFile{}
 
-func (p *OutputPluginFile) ReplaceLogger(logger logr.Logger) {
+func (p *OutputPluginFile) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 
@@ -53,7 +53,7 @@ func (p *OutputPluginFile) Load(
 
 	defer func() {
 		if err := fs.Close(); err != nil {
-			p.logger.Error(err, "failed to close file")
+			p.logger.Error("failed to close file", slog.Any("error", err))
 		}
 	}()
 
@@ -83,7 +83,7 @@ loop:
 
 			if len(msgs) > 0 {
 				loadedTotal += len(msgs)
-				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+				p.logger.Info("loaded records", slog.Int("count", loadedTotal))
 			}
 		}
 	}

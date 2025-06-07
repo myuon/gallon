@@ -10,8 +10,9 @@ import (
 	"strings"
 	"text/template"
 
+	"log/slog"
+
 	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
 	"github.com/myuon/gallon/gallon"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -147,11 +148,12 @@ func RunGallonWithOptions(configYml []byte, opts RunGallonOptions) error {
 		}
 	}()
 
-	var logger logr.Logger
+	var logger *slog.Logger
 	if opts.Logger != nil {
-		logger = *opts.Logger
+		// 既存のlogr.Loggerからslog.Loggerを生成する方法はないので、デフォルトのslog.Loggerを使う
+		logger = slog.Default()
 	} else {
-		logger = zapr.NewLogger(zap.L())
+		logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	}
 
 	g := gallon.Gallon{

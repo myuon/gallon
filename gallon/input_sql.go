@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
-	"github.com/go-logr/logr"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -17,7 +17,7 @@ import (
 )
 
 type InputPluginSql struct {
-	logger    logr.Logger
+	logger    *slog.Logger
 	client    *sql.DB
 	tableName string
 	driver    string
@@ -40,7 +40,7 @@ func NewInputPluginSql(
 
 var _ InputPlugin = &InputPluginSql{}
 
-func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
+func (p *InputPluginSql) ReplaceLogger(logger *slog.Logger) {
 	p.logger = logger
 }
 
@@ -134,7 +134,7 @@ loop:
 				messages <- msgs
 				extractedTotal += len(msgs)
 
-				p.logger.Info(fmt.Sprintf("extracted %v records", extractedTotal))
+				p.logger.Info("extracted records", slog.Int("count", extractedTotal))
 			} else {
 				hasNext = false
 			}
@@ -143,7 +143,7 @@ loop:
 		}
 	}
 	if extractedTotal == 0 {
-		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))
+		p.logger.Info("no records found", slog.String("table", p.tableName))
 	}
 
 	return nil

@@ -3,6 +3,8 @@ package gallon
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"testing"
 )
 
@@ -35,7 +37,7 @@ format: json
 	}
 
 	g := Gallon{
-		Logger: logger,
+		Logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
 		Input:  NewInputPluginStub(data),
 		Output: output,
 	}
