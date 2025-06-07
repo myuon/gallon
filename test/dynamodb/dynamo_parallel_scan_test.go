@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/myuon/gallon/cmd"
+	"github.com/neilotoole/slogt"
 )
 
 // MigrateLargeDataset creates a table with 10k records for parallel scan testing
@@ -92,7 +93,7 @@ func MigrateLargeDataset(client *dynamodb.Client) error {
 	go func() {
 		defer close(recordChan)
 		batch := make([]UserTable, 0, batchSize)
-		
+
 		for i := 0; i < totalRecords; i++ {
 			v, err := NewFakeUserTable()
 			if err != nil {
@@ -141,7 +142,7 @@ func MigrateLargeDataset(client *dynamodb.Client) error {
 
 func insertBatch(client *dynamodb.Client, tableName string, batch []UserTable) error {
 	ctx := context.Background()
-	
+
 	var writeRequests []types.WriteRequest
 	for _, v := range batch {
 		record := map[string]types.AttributeValue{
@@ -188,7 +189,7 @@ func insertBatch(client *dynamodb.Client, tableName string, batch []UserTable) e
 				tableName: writeRequests,
 			},
 		})
-		
+
 		if err == nil {
 			return nil
 		}
@@ -208,13 +209,13 @@ func Test_dynamodb_large_dataset_parallel_scan(t *testing.T) {
 	}
 
 	// Create large dataset
-	log.Println("Creating large dataset for parallel scan test...")
+	t.Log("Creating large dataset for parallel scan test...")
 	if err := MigrateLargeDataset(client); err != nil {
 		t.Fatalf("Could not migrate large dataset: %v", err)
 	}
 
 	startTime := time.Now()
-	
+
 	configYml := fmt.Sprintf(`
 in:
   type: dynamodb
@@ -257,19 +258,21 @@ out:
 
 	defer func() {
 		if err := os.Remove("./large_output.jsonl"); err != nil {
-			log.Printf("Could not remove output file: %s", err)
+			t.Logf("Could not remove output file: %s", err)
 		}
 	}()
 
-	log.Println("Starting data migration...")
-	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+	t.Log("Starting data migration...")
+	if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+		Logger: slogt.New(t),
+	}); err != nil {
 		t.Fatalf("Could not run command: %s", err)
 	}
 
 	endTime := time.Now()
 	duration := endTime.Sub(startTime)
-	
-	log.Printf("Migration completed in %v", duration)
+
+	t.Logf("Migration completed in %v", duration)
 
 	// Verify output file
 	jsonl, err := os.ReadFile("./large_output.jsonl")
@@ -310,7 +313,7 @@ out:
 	// Calculate performance metrics
 	recordsPerSecond := float64(10000) / duration.Seconds()
 	log.Printf("Performance: %.2f records/second", recordsPerSecond)
-	
+
 	// Performance assertion - should process at least 500 records per second
 	if recordsPerSecond < 500 {
 		t.Logf("Warning: Performance might be suboptimal. Got %.2f records/second, expected at least 500", recordsPerSecond)
@@ -323,7 +326,7 @@ func Test_dynamodb_parallel_scan_consistency(t *testing.T) {
 	}
 
 	// Create large dataset first (reuse from previous test or create new one)
-	log.Println("Ensuring large dataset exists for consistency test...")
+	t.Log("Ensuring large dataset exists for consistency test...")
 	if err := MigrateLargeDataset(client); err != nil {
 		t.Fatalf("Could not migrate large dataset: %v", err)
 	}
@@ -335,9 +338,9 @@ func Test_dynamodb_parallel_scan_consistency(t *testing.T) {
 
 	for run := 0; run < runs; run++ {
 		t.Logf("Starting consistency test run %d/%d", run+1, runs)
-		
+
 		startTime := time.Now()
-		
+
 		configYml := fmt.Sprintf(`
 in:
   type: dynamodb
@@ -361,11 +364,13 @@ out:
 		outputFile := fmt.Sprintf("./consistency_output_%d.jsonl", run)
 		defer func(file string) {
 			if err := os.Remove(file); err != nil {
-				log.Printf("Could not remove output file %s: %s", file, err)
+				t.Logf("Could not remove output file %s: %s", file, err)
 			}
 		}(outputFile)
 
-		if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+			Logger: slogt.New(t),
+		}); err != nil {
 			t.Fatalf("Could not run command for run %d: %s", run+1, err)
 		}
 
@@ -380,7 +385,7 @@ out:
 
 		lines := strings.Split(string(jsonl), "\n")
 		lineCounts = append(lineCounts, len(lines))
-		
+
 		t.Logf("Run %d completed in %v with %d lines", run+1, duration, len(lines))
 	}
 
@@ -398,11 +403,11 @@ out:
 		totalDuration += d
 	}
 	avgDuration := totalDuration / time.Duration(len(durations))
-	
+
 	for i, d := range durations {
 		deviation := float64(d-avgDuration) / float64(avgDuration)
 		if deviation > 0.5 || deviation < -0.5 { // Allow 50% deviation
-			t.Logf("Warning: Run %d duration %v deviates significantly from average %v (%.1f%%)", 
+			t.Logf("Warning: Run %d duration %v deviates significantly from average %v (%.1f%%)",
 				i+1, d, avgDuration, deviation*100)
 		}
 	}

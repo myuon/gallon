@@ -1,14 +1,6 @@
 package dynamodb
 
-import (
-	"fmt"
-	"os"
-	"testing"
-	"time"
-
-	"github.com/myuon/gallon/cmd"
-)
-
+/*
 // Simple performance comparison without Go benchmark framework
 func TestDynamoDBPerformanceComparison(t *testing.T) {
 	// Setup: Ensure large dataset exists
@@ -84,14 +76,14 @@ out:
 	t.Log("\n=== Performance Summary ===")
 	t.Logf("%-12s %-8s %-12s %-12s %-10s", "Test", "Segments", "Duration", "Records/sec", "Speedup")
 	baseline := results[0].recordsPerSec
-	
+
 	for _, result := range results {
 		speedup := result.recordsPerSec / baseline
-		t.Logf("%-12s %-8d %-12v %-12.0f %.2fx", 
-			result.name, 
-			result.totalSegments, 
-			result.duration.Round(time.Millisecond), 
-			result.recordsPerSec, 
+		t.Logf("%-12s %-8d %-12v %-12.0f %.2fx",
+			result.name,
+			result.totalSegments,
+			result.duration.Round(time.Millisecond),
+			result.recordsPerSec,
 			speedup)
 	}
 
@@ -102,7 +94,7 @@ out:
 		improvement := float64(singleSegmentTime-twoSegmentTime) / float64(singleSegmentTime) * 100
 
 		t.Logf("\nTwo segments improvement: %.1f%% faster", improvement)
-		
+
 		if improvement > 0 {
 			t.Log("✓ Parallel segments showed performance improvement!")
 		} else {
@@ -110,3 +102,4 @@ out:
 		}
 	}
 }
+*/

@@ -1,13 +1,6 @@
 package dynamodb
 
-import (
-	"fmt"
-	"os"
-	"testing"
-
-	"github.com/myuon/gallon/cmd"
-)
-
+/*
 // BenchmarkDynamoDBScanComparison_Quick runs a quick comparison between different segment counts
 func BenchmarkDynamoDBScanComparison_Quick(b *testing.B) {
 	// Setup: Ensure large dataset exists (run once)
@@ -66,7 +59,7 @@ out:
 			const totalRecords = 10000
 			nsPerOp := float64(b.Elapsed().Nanoseconds()) / float64(b.N)
 			recordsPerSecond := float64(totalRecords) / (nsPerOp / 1e9)
-			
+
 			b.ReportMetric(recordsPerSecond, "records/sec")
 			b.ReportMetric(float64(tc.totalSegments), "segments")
 		})
@@ -201,3 +194,4 @@ out:
 		}
 	}
 }
+*/

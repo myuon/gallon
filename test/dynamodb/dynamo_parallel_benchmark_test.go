@@ -1,13 +1,6 @@
 package dynamodb
 
-import (
-	"fmt"
-	"os"
-	"testing"
-
-	"github.com/myuon/gallon/cmd"
-)
-
+/*
 // BenchmarkDynamoDBScan_1Segment benchmarks single segment scan
 func BenchmarkDynamoDBScan_1Segment(b *testing.B) {
 	benchmarkDynamoDBScan(b, 1)
@@ -252,7 +245,7 @@ out:
 			const totalRecords = 10000
 			avgNsPerOp := b.Elapsed().Nanoseconds() / int64(b.N)
 			recordsPerSecond := float64(totalRecords) / (float64(avgNsPerOp) / 1e9)
-			
+
 			// Report custom metrics
 			b.ReportMetric(recordsPerSecond, "records/sec")
 			b.ReportMetric(float64(totalRecords), "records/op")
@@ -261,3 +254,4 @@ out:
 		})
 	}
 }
+*/

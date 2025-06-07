@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/myuon/gallon/cmd"
+	"github.com/neilotoole/slogt"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"go.uber.org/zap"
@@ -272,7 +273,9 @@ out:
 		}
 	}()
 
-	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+	if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+		Logger: slogt.New(t),
+	}); err != nil {
 		t.Errorf("Could not run command: %s", err)
 	}
 
@@ -481,7 +484,9 @@ out:
 	}()
 
 	// Run Gallon
-	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+	if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+		Logger: slogt.New(t),
+	}); err != nil {
 		t.Fatalf("Failed to run Gallon: %s", err)
 	}
 
@@ -593,7 +598,9 @@ out:
 		}
 	}()
 
-	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+	if err := cmd.RunGallonWithOptions([]byte(configYml), cmd.RunGallonOptions{
+		Logger: slogt.New(t),
+	}); err != nil {
 		t.Errorf("Could not run command: %s", err)
 	}
 
@@ -613,7 +620,7 @@ out:
 			continue
 		}
 
-		log.Println(line)
+		t.Log(line)
 
 		var data map[string]any
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
