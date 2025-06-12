@@ -238,7 +238,7 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 
 	dbConfig := inConfig.In
 	if dbConfig.PageSize == 0 {
-		dbConfig.PageSize = 100
+		dbConfig.PageSize = 1000
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())

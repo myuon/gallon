@@ -335,7 +335,7 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 
 	dbConfig := inConfig.In
 	if dbConfig.PageSize == 0 {
-		dbConfig.PageSize = 100
+		dbConfig.PageSize = 1000
 	}
 
 	db, err := sql.Open(dbConfig.Driver, dbConfig.DatabaseUrl)
