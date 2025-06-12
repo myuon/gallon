@@ -18,17 +18,20 @@ type InputPluginDynamoDb struct {
 	logger    logr.Logger
 	client    *dynamodb.Client
 	tableName string
+	pageSize  int
 	serialize func(map[string]types.AttributeValue) (GallonRecord, error)
 }
 
 func NewInputPluginDynamoDb(
 	client *dynamodb.Client,
 	tableName string,
+	pageSize int,
 	serialize func(map[string]types.AttributeValue) (GallonRecord, error),
 ) *InputPluginDynamoDb {
 	return &InputPluginDynamoDb{
 		client:    client,
 		tableName: tableName,
+		pageSize:  pageSize,
 		serialize: serialize,
 	}
 }
@@ -64,7 +67,7 @@ loop:
 				&dynamodb.ScanInput{
 					TableName:         aws.String(p.tableName),
 					ExclusiveStartKey: lastEvaluatedKey,
-					Limit:             aws.Int32(100),
+					Limit:             aws.Int32(int32(p.pageSize)),
 				},
 			)
 			if err != nil {
@@ -107,6 +110,7 @@ type InputPluginDynamoDbConfig struct {
 	Schema   map[string]InputPluginDynamoDbConfigSchemaColumn `yaml:"schema"`
 	Region   string                                           `yaml:"region"`
 	Endpoint *string                                          `yaml:"endpoint"`
+	PageSize int                                              `yaml:"pageSize"`
 }
 
 type InputPluginDynamoDbConfigSchemaColumn struct {
@@ -233,6 +237,9 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 	}
 
 	dbConfig := inConfig.In
+	if dbConfig.PageSize == 0 {
+		dbConfig.PageSize = 1000
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -262,6 +269,7 @@ func NewInputPluginDynamoDbFromConfig(configYml []byte) (*InputPluginDynamoDb, e
 	return NewInputPluginDynamoDb(
 		client,
 		dbConfig.Table,
+		dbConfig.PageSize,
 		func(item map[string]types.AttributeValue) (GallonRecord, error) {
 			record := NewGallonRecord()
 
