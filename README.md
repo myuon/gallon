@@ -162,6 +162,7 @@ in:
   type: dynamodb
   region: ap-northeast-1
   table: users
+  pageSize: 100
   endpoint: "http://localhost:8000"
   schema:
     id:
@@ -193,6 +194,7 @@ in:
 - region: Your AWS Region
 - table: Your DynamoDB Table name
 - endpoint: for dynamodb-local (optional)
+- pageSize: Number of records per page (optional, default: 100)
 - schema
   - type: `string`, `number`, `boolean`, `object`, `array`, `any` are supported
   - rename: Change column name (optional)
@@ -206,6 +208,7 @@ in:
   type: sql
   driver: mysql
   table: users
+  pageSize: 100
   database_url: user:password@tcp(localhost:3306)/dbname
   schema:
     id:
@@ -247,6 +250,7 @@ in:
 - table: Table name
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
   - For MySQL, it should be `user:password@tcp(host:port)/dbname` (See: [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#dsn-data-source-name))
+- pageSize: Number of records per page (optional, default: 100)
 - schema
   - type: `string`, `int`, `float`, `decimal`, `time`, `date`, `bool`, `json` are supported. NULL are always acceptable.
     - `date`: Returns YYYY-MM-DD formatted string. If you want to return time.Time object, specify `time` type.

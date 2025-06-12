@@ -21,6 +21,7 @@ type InputPluginSql struct {
 	client    *sql.DB
 	tableName string
 	driver    string
+	pageSize  int
 	serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error)
 }
 
@@ -28,12 +29,14 @@ func NewInputPluginSql(
 	client *sql.DB,
 	tableName string,
 	driver string,
+	pageSize int,
 	serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error),
 ) *InputPluginSql {
 	return &InputPluginSql{
 		client:    client,
 		tableName: tableName,
 		driver:    driver,
+		pageSize:  pageSize,
 		serialize: serialize,
 	}
 }
@@ -61,13 +64,15 @@ func (p *InputPluginSql) Extract(
 	pagedQueryStatement := ""
 	if p.driver == "mysql" {
 		pagedQueryStatement = fmt.Sprintf(
-			"SELECT * FROM %v LIMIT 100 OFFSET ?",
+			"SELECT * FROM %v LIMIT %d OFFSET ?",
 			p.tableName,
+			p.pageSize,
 		)
 	} else if p.driver == "postgres" {
 		pagedQueryStatement = fmt.Sprintf(
-			"SELECT * FROM %v LIMIT 100 OFFSET $1",
+			"SELECT * FROM %v LIMIT %d OFFSET $1",
 			p.tableName,
+			p.pageSize,
 		)
 	} else {
 		return fmt.Errorf("unsupported driver: %v", p.driver)
@@ -89,7 +94,7 @@ loop:
 		case <-ctx.Done():
 			break loop
 		default:
-			rows, err := query.Query(page * 100)
+			rows, err := query.Query(page * p.pageSize)
 			if err != nil {
 				return err
 			}
@@ -157,6 +162,7 @@ type InputPluginSqlConfig struct {
 	Table       string                                                          `yaml:"table"`
 	DatabaseUrl string                                                          `yaml:"database_url"`
 	Driver      string                                                          `yaml:"driver"`
+	PageSize    int                                                             `yaml:"pageSize"`
 	Schema      orderedmap.OrderedMap[string, InputPluginSqlConfigSchemaColumn] `yaml:"schema"`
 }
 
@@ -328,6 +334,9 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 	}
 
 	dbConfig := inConfig.In
+	if dbConfig.PageSize == 0 {
+		dbConfig.PageSize = 100
+	}
 
 	db, err := sql.Open(dbConfig.Driver, dbConfig.DatabaseUrl)
 	if err != nil {
@@ -341,6 +350,7 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 		db,
 		dbConfig.Table,
 		dbConfig.Driver,
+		dbConfig.PageSize,
 		func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
 			record := NewGallonRecord()
 
