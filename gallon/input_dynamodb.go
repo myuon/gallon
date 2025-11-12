@@ -39,6 +39,11 @@ func NewInputPluginDynamoDb(
 var _ InputPlugin = &InputPluginDynamoDb{}
 
 func (p *InputPluginDynamoDb) ReplaceLogger(logger logr.Logger) {
+	if p.tableName != "" {
+		p.logger = logger.WithValues("table", p.tableName)
+		return
+	}
+
 	p.logger = logger
 }
 

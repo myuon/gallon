@@ -60,6 +60,19 @@ func (w bqRecordWrapper) Save() (row map[string]bigquery.Value, insertID string,
 var _ OutputPlugin = &OutputPluginBigQuery{}
 
 func (p *OutputPluginBigQuery) ReplaceLogger(logger logr.Logger) {
+	values := []any{}
+	if p.datasetId != "" {
+		values = append(values, "dataset", p.datasetId)
+	}
+	if p.tableId != "" {
+		values = append(values, "table", p.tableId)
+	}
+
+	if len(values) > 0 {
+		p.logger = logger.WithValues(values...)
+		return
+	}
+
 	p.logger = logger
 }
 

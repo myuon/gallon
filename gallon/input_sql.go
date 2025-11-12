@@ -82,6 +82,11 @@ func NewInputPluginSql(
 var _ InputPlugin = &InputPluginSql{}
 
 func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
+	if p.tableName != "" {
+		p.logger = logger.WithValues("table", p.tableName)
+		return
+	}
+
 	p.logger = logger
 }
 
