@@ -101,7 +101,7 @@ func (p *OutputPluginBigQuery) Load(
 	defer func() {
 		if p.deleteTemporaryTable {
 			if err := temporaryTable.Delete(ctx); err != nil {
-				p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
+				p.logger.Error(err, "failed to delete temporary table", "table", p.tableId, "tableId", temporaryTable.TableID)
 			} else {
 				p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
 			}
@@ -123,7 +123,7 @@ func (p *OutputPluginBigQuery) Load(
 	}
 	defer func() {
 		if err := os.Remove(temporaryFile.Name()); err != nil {
-			p.logger.Error(err, "failed to remove temporary file", "path", temporaryFile.Name())
+			p.logger.Error(err, "failed to remove temporary file", "table", p.tableId, "path", temporaryFile.Name())
 		}
 	}()
 

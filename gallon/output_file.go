@@ -56,7 +56,7 @@ func (p *OutputPluginFile) Load(
 
 	defer func() {
 		if err := fs.Close(); err != nil {
-			p.logger.Error(err, "failed to close file")
+			p.logger.Error(err, "failed to close file", "filepath", p.filepath)
 		}
 	}()
 
