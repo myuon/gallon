@@ -471,3 +471,105 @@ out:
 		}
 	}
 }
+
+func Test_mysql_to_bigquery_timezone_conversion(t *testing.T) {
+	// テスト用のテーブルを作成
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Could not get connection: %s", err)
+	}
+	defer conn.Close()
+
+	queryCreateTable, err := conn.QueryContext(ctx, strings.Join([]string{
+		"CREATE TABLE IF NOT EXISTS timezone_test (",
+		"id VARCHAR(255) NOT NULL,",
+		"created_at DATETIME NOT NULL,",
+		"PRIMARY KEY (id)",
+		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+	}, "\n"))
+	if err != nil {
+		t.Fatalf("Could not create table: %s", err)
+	}
+	queryCreateTable.Close()
+
+	// タイムゾーンなしで日時データを挿入
+	// MySQL側には "2024-01-15 10:30:00" として保存される
+	query, err := conn.PrepareContext(
+		ctx,
+		"INSERT INTO timezone_test (id, created_at) VALUES (?, ?)",
+	)
+	if err != nil {
+		t.Fatalf("Could not prepare query: %s", err)
+	}
+	defer query.Close()
+
+	if _, err := query.Exec("1", "2024-01-15 10:30:00"); err != nil {
+		t.Fatalf("Could not insert data: %s", err)
+	}
+
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  table: timezone_test
+  database_url: %v
+  schema:
+    id:
+      type: string
+    created_at:
+      type: time
+      default_timezone: "+09:00"
+      transforms:
+        - tz: "UTC"
+out:
+  type: bigquery
+  endpoint: %v
+  projectId: test
+  datasetId: dataset1
+  tableId: timezone_test
+  schema:
+    id:
+      type: string
+    created_at:
+      type: timestamp
+`, databaseUrl, bqEndpoint)
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Fatalf("Could not run command: %s", err)
+	}
+
+	table := bqClient.Dataset("dataset1").Table("timezone_test")
+	it := table.Read(context.Background())
+
+	records := make([]map[string]bigquery.Value, 0)
+	for {
+		var v map[string]bigquery.Value
+		err := it.Next(&v)
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Could not iterate: %s", err)
+		}
+		records = append(records, v)
+	}
+
+	// レコード数の確認
+	assert.Equal(t, 1, len(records))
+
+	// タイムゾーン変換の確認
+	// MySQLに "2024-01-15 10:30:00" として保存したものが
+	// JSTとして解釈され、UTCに変換されると "2024-01-15 01:30:00 UTC" になる
+	record := records[0]
+	log.Printf("record: %v", record)
+
+	createdAt, ok := record["created_at"].(time.Time)
+	if !ok {
+		t.Fatalf("created_at is not time.Time: %T", record["created_at"])
+	}
+
+	// UTCで2024-01-15 01:30:00であることを確認
+	expectedTimeStr := "2024-01-15 01:30:00 +0000 UTC"
+	assert.Equal(t, expectedTimeStr, createdAt.String(), "Expected %v but got %v", expectedTimeStr, createdAt.String())
+}

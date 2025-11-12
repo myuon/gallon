@@ -242,6 +242,11 @@ in:
       transforms:
         - type: string
           format: "2006-01-02 15:04:05"
+    event_time:
+      type: time
+      default_timezone: "+09:00"
+      transforms:
+        - tz: "UTC"
 ```
 
 - driver: `mysql`, `postgres` are supported
@@ -255,12 +260,14 @@ in:
   - type: `string`, `int`, `float`, `decimal`, `time`, `date`, `bool`, `json` are supported. NULL are always acceptable.
     - `date`: Returns YYYY-MM-DD formatted string. If you want to return time.Time object, specify `time` type.
   - rename: Change column name.
-  - transforms: Change column value type.
+  - default_timezone: For `time` type, specify the default timezone for datetime values without timezone information. Supports both IANA timezone identifiers (e.g., `Asia/Tokyo`, `UTC`) and numeric offsets (e.g., `+09:00`, `+9`, `-05:00`). (optional)
+  - transforms: Change column value type or apply transformations.
     - type: Change type to `string`, `time`.
     - format: Format for type conversion. The following formats are supported.
       - For `time`, you can specify Go time format string (e.g. `2006-01-02 15:04:05`)
     - as: Convert method for type conversion. The following methods are supported.
       - For `int` type, you can specify `unix` to interpret as Unix timestamp.
+    - tz: For `time` type, convert the datetime to the specified timezone. Supports both IANA timezone identifiers (e.g., `Asia/Tokyo`, `UTC`) and numeric offsets (e.g., `+09:00`, `+9`, `-05:00`). (optional)
 
 ### Random Input Plugin
 

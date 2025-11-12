@@ -16,6 +16,44 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// parseTimezone parses a timezone string which can be:
+// - IANA timezone identifier like "Asia/Tokyo", "UTC"
+// - Numeric offset like "+09:00", "+9", "-05:00"
+func parseTimezone(tz string) (*time.Location, error) {
+	// Try to load as IANA timezone first
+	loc, err := time.LoadLocation(tz)
+	if err == nil {
+		return loc, nil
+	}
+
+	// Try to parse as numeric offset
+	// Handle formats like "+9", "+09:00", "-05:00"
+	var hours, minutes int
+	var sign int = 1
+
+	if tz[0] == '+' {
+		sign = 1
+		tz = tz[1:]
+	} else if tz[0] == '-' {
+		sign = -1
+		tz = tz[1:]
+	}
+
+	// Try parsing with colon separator first (e.g., "09:00")
+	_, err = fmt.Sscanf(tz, "%d:%d", &hours, &minutes)
+	if err != nil {
+		// Try parsing as just hours (e.g., "9")
+		_, err = fmt.Sscanf(tz, "%d", &hours)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timezone format: %s", tz)
+		}
+		minutes = 0
+	}
+
+	offset := sign * (hours*3600 + minutes*60)
+	return time.FixedZone(fmt.Sprintf("UTC%+d", sign*hours), offset), nil
+}
+
 type InputPluginSql struct {
 	logger    logr.Logger
 	client    *sql.DB
@@ -167,9 +205,10 @@ type InputPluginSqlConfig struct {
 }
 
 type InputPluginSqlConfigSchemaColumn struct {
-	Type       string                                      `yaml:"type"`
-	Transforms []InputPluginSqlConfigSchemaColumnTransform `yaml:"transforms"`
-	Rename     *string                                     `yaml:"rename"`
+	Type            string                                      `yaml:"type"`
+	DefaultTimezone *string                                     `yaml:"default_timezone"`
+	Transforms      []InputPluginSqlConfigSchemaColumnTransform `yaml:"transforms"`
+	Rename          *string                                     `yaml:"rename"`
 }
 
 type InputPluginSqlConfigSchemaColumnTransform struct {
@@ -177,6 +216,7 @@ type InputPluginSqlConfigSchemaColumnTransform struct {
 	Type   string  `yaml:"type"`
 	Format *string `yaml:"format"`
 	As     *string `yaml:"as"`
+	Tz     *string `yaml:"tz"`
 }
 
 func (c InputPluginSqlConfigSchemaColumnTransform) Transform(sourceType string, value any) (any, error) {
@@ -185,6 +225,16 @@ func (c InputPluginSqlConfigSchemaColumnTransform) Transform(sourceType string, 
 		v, ok := value.(time.Time)
 		if !ok {
 			return nil, fmt.Errorf("value is not time: %v", value)
+		}
+
+		// Handle timezone conversion
+		if c.Tz != nil {
+			loc, err := parseTimezone(*c.Tz)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load timezone: %v", err)
+			}
+			v = v.In(loc)
+			return v, nil
 		}
 
 		if c.Type == "string" {
@@ -296,9 +346,24 @@ func (c InputPluginSqlConfigSchemaColumn) getValue(value any) (any, error) {
 		// when parseTime not specified, mysql returns []byte
 		b, ok := value.([]byte)
 		if ok {
-			v, err := time.Parse("2006-01-02 15:04:05", string(b))
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse time: %v", err)
+			var v time.Time
+			var err error
+
+			// Parse with default timezone if specified
+			if c.DefaultTimezone != nil {
+				loc, err := parseTimezone(*c.DefaultTimezone)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load default timezone: %v", err)
+				}
+				v, err = time.ParseInLocation("2006-01-02 15:04:05", string(b), loc)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse time: %v", err)
+				}
+			} else {
+				v, err = time.Parse("2006-01-02 15:04:05", string(b))
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse time: %v", err)
+				}
 			}
 
 			return v, nil
