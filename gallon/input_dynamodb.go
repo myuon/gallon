@@ -97,7 +97,7 @@ loop:
 				messages <- msgs
 
 				extractedTotal += len(msgs)
-				p.logger.Info(fmt.Sprintf("extracted %d records", extractedTotal))
+				p.logger.Info(fmt.Sprintf("extracted %d records", extractedTotal), "table", p.tableName)
 			}
 		}
 	}

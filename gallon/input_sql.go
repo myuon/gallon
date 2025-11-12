@@ -177,7 +177,7 @@ loop:
 				messages <- msgs
 				extractedTotal += len(msgs)
 
-				p.logger.Info(fmt.Sprintf("extracted %v records", extractedTotal))
+				p.logger.Info(fmt.Sprintf("extracted %v records", extractedTotal), "table", p.tableName)
 			} else {
 				hasNext = false
 			}
@@ -186,7 +186,7 @@ loop:
 		}
 	}
 	if extractedTotal == 0 {
-		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))
+		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName), "table", p.tableName)
 	}
 
 	return nil

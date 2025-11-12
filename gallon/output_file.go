@@ -17,15 +17,18 @@ import (
 
 type OutputPluginFile struct {
 	logger      logr.Logger
+	filepath    string
 	deserialize func(GallonRecord) ([]byte, error)
 	newWriter   func() (io.WriteCloser, error)
 }
 
 func NewOutputPluginFile(
+	filepath string,
 	deserialize func(GallonRecord) ([]byte, error),
 	newWriter func() (io.WriteCloser, error),
 ) *OutputPluginFile {
 	return &OutputPluginFile{
+		filepath:    filepath,
 		deserialize: deserialize,
 		newWriter:   newWriter,
 	}
@@ -83,7 +86,7 @@ loop:
 
 			if len(msgs) > 0 {
 				loadedTotal += len(msgs)
-				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal))
+				p.logger.Info(fmt.Sprintf("loaded %v records", loadedTotal), "filepath", p.filepath)
 			}
 		}
 	}
@@ -111,6 +114,7 @@ func NewOutputPluginFileFromConfig(configYml []byte) (*OutputPluginFile, error) 
 	}
 
 	return NewOutputPluginFile(
+		config.Filepath,
 		deserializer,
 		func() (io.WriteCloser, error) {
 			fs, err := os.Create(config.Filepath)
