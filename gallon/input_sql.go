@@ -225,6 +225,11 @@ type InputPluginSqlConfigSchemaColumnTransform struct {
 }
 
 func (c InputPluginSqlConfigSchemaColumnTransform) Transform(sourceType string, value any) (any, error) {
+	// If value is nil, return nil immediately without transformation
+	if value == nil {
+		return nil, nil
+	}
+
 	switch sourceType {
 	case "time":
 		v, ok := value.(time.Time)
