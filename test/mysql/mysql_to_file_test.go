@@ -671,3 +671,142 @@ out:
 		}
 	}
 }
+
+func Test_mysql_to_file_raw_query(t *testing.T) {
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  database_url: %v
+  query: "SELECT id, name, age FROM users WHERE age > 50"
+out:
+  type: file
+  filepath: ./output_raw_query.jsonl
+  format: jsonl
+`, databaseUrl)
+	defer func() {
+		if err := os.Remove("./output_raw_query.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_raw_query.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) > 10 {
+		log.Println(strings.Join(lines[:10], "\n"))
+	}
+
+	// Should have some records (users with age > 50)
+	recordCount := strings.Count(string(jsonl), "\n")
+	if recordCount == 0 {
+		t.Errorf("Expected some records, got 0")
+	}
+	log.Printf("Raw query returned %d records", recordCount)
+
+	// Verify the record structure (should have only id, name, age from the query)
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Errorf("Failed to parse line %d: %v", i, err)
+			continue
+		}
+
+		// Check that only the queried columns exist
+		if _, ok := record["id"]; !ok {
+			t.Errorf("id should exist in line %d", i)
+		}
+		if _, ok := record["name"]; !ok {
+			t.Errorf("name should exist in line %d", i)
+		}
+		if _, ok := record["age"]; !ok {
+			t.Errorf("age should exist in line %d", i)
+		}
+
+		// Verify age > 50 as per the query
+		age, ok := record["age"].(float64)
+		if !ok {
+			t.Errorf("age is not a number in line %d: %v", i, record["age"])
+			continue
+		}
+		if age <= 50 {
+			t.Errorf("age should be > 50 in line %d, got %v", i, age)
+		}
+
+		// birthday, created_at etc should not exist (not in query)
+		if _, ok := record["birthday"]; ok {
+			t.Errorf("birthday should not exist in line %d (not selected in query)", i)
+		}
+	}
+}
+
+func Test_mysql_to_file_raw_query_with_join(t *testing.T) {
+	// This test verifies that raw query mode works with complex queries like JOINs
+	// For simplicity, we use a self-join to demonstrate the capability
+	configYml := fmt.Sprintf(`
+in:
+  type: sql
+  driver: mysql
+  database_url: %v
+  query: "SELECT u1.id as user_id, u1.name as user_name, COUNT(*) as same_age_count FROM users u1 INNER JOIN users u2 ON u1.age = u2.age GROUP BY u1.id, u1.name HAVING COUNT(*) > 1"
+out:
+  type: file
+  filepath: ./output_raw_query_join.jsonl
+  format: jsonl
+`, databaseUrl)
+	defer func() {
+		if err := os.Remove("./output_raw_query_join.jsonl"); err != nil {
+			t.Errorf("Could not remove output file: %s", err)
+		}
+	}()
+
+	if err := cmd.RunGallon([]byte(configYml)); err != nil {
+		t.Errorf("Could not run command: %s", err)
+	}
+
+	jsonl, err := os.ReadFile("./output_raw_query_join.jsonl")
+	if err != nil {
+		t.Errorf("Could not read output file: %s", err)
+	}
+
+	lines := strings.Split(string(jsonl), "\n")
+	if len(lines) > 10 {
+		log.Println(strings.Join(lines[:10], "\n"))
+	}
+
+	recordCount := strings.Count(string(jsonl), "\n")
+	log.Printf("Raw query with JOIN returned %d records", recordCount)
+
+	// Verify the record structure
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Errorf("Failed to parse line %d: %v", i, err)
+			continue
+		}
+
+		// Check that aliased columns exist
+		if _, ok := record["user_id"]; !ok {
+			t.Errorf("user_id should exist in line %d", i)
+		}
+		if _, ok := record["user_name"]; !ok {
+			t.Errorf("user_name should exist in line %d", i)
+		}
+		if _, ok := record["same_age_count"]; !ok {
+			t.Errorf("same_age_count should exist in line %d", i)
+		}
+	}
+}

@@ -58,6 +58,7 @@ type InputPluginSql struct {
 	logger    logr.Logger
 	client    *sql.DB
 	tableName string
+	rawQuery  string
 	driver    string
 	pageSize  int
 	serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error)
@@ -66,6 +67,7 @@ type InputPluginSql struct {
 func NewInputPluginSql(
 	client *sql.DB,
 	tableName string,
+	rawQuery string,
 	driver string,
 	pageSize int,
 	serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error),
@@ -73,6 +75,7 @@ func NewInputPluginSql(
 	return &InputPluginSql{
 		client:    client,
 		tableName: tableName,
+		rawQuery:  rawQuery,
 		driver:    driver,
 		pageSize:  pageSize,
 		serialize: serialize,
@@ -87,11 +90,23 @@ func (p *InputPluginSql) ReplaceLogger(logger logr.Logger) {
 		return
 	}
 
+	if p.rawQuery != "" {
+		p.logger = logger.WithValues("mode", "raw_query")
+		return
+	}
+
 	p.logger = logger
 }
 
 func (p *InputPluginSql) Cleanup() error {
 	return p.client.Close()
+}
+
+func (p *InputPluginSql) sourceName() string {
+	if p.rawQuery != "" {
+		return "raw_query"
+	}
+	return p.tableName
 }
 
 func (p *InputPluginSql) Extract(
@@ -105,20 +120,40 @@ func (p *InputPluginSql) Extract(
 	extractedTotal := 0
 
 	pagedQueryStatement := ""
-	if p.driver == "mysql" {
-		pagedQueryStatement = fmt.Sprintf(
-			"SELECT * FROM %v LIMIT %d OFFSET ?",
-			p.tableName,
-			p.pageSize,
-		)
-	} else if p.driver == "postgres" {
-		pagedQueryStatement = fmt.Sprintf(
-			"SELECT * FROM %v LIMIT %d OFFSET $1",
-			p.tableName,
-			p.pageSize,
-		)
+	if p.rawQuery != "" {
+		// Raw query mode: wrap user's query as subquery for pagination
+		if p.driver == "mysql" {
+			pagedQueryStatement = fmt.Sprintf(
+				"SELECT * FROM (%s) AS __gallon_raw_query LIMIT %d OFFSET ?",
+				p.rawQuery,
+				p.pageSize,
+			)
+		} else if p.driver == "postgres" {
+			pagedQueryStatement = fmt.Sprintf(
+				"SELECT * FROM (%s) AS __gallon_raw_query LIMIT %d OFFSET $1",
+				p.rawQuery,
+				p.pageSize,
+			)
+		} else {
+			return fmt.Errorf("unsupported driver: %v", p.driver)
+		}
 	} else {
-		return fmt.Errorf("unsupported driver: %v", p.driver)
+		// Table mode
+		if p.driver == "mysql" {
+			pagedQueryStatement = fmt.Sprintf(
+				"SELECT * FROM %v LIMIT %d OFFSET ?",
+				p.tableName,
+				p.pageSize,
+			)
+		} else if p.driver == "postgres" {
+			pagedQueryStatement = fmt.Sprintf(
+				"SELECT * FROM %v LIMIT %d OFFSET $1",
+				p.tableName,
+				p.pageSize,
+			)
+		} else {
+			return fmt.Errorf("unsupported driver: %v", p.driver)
+		}
 	}
 
 	query, err := p.client.Prepare(pagedQueryStatement)
@@ -127,7 +162,7 @@ func (p *InputPluginSql) Extract(
 	}
 	defer func() {
 		if err := query.Close(); err != nil {
-			errs <- fmt.Errorf("failed to close sql query: %v (error: %v)", p.tableName, err)
+			errs <- fmt.Errorf("failed to close sql query: %v (error: %v)", p.sourceName(), err)
 		}
 	}()
 
@@ -159,7 +194,7 @@ loop:
 				}
 
 				if err := rows.Scan(columnPointers...); err != nil {
-					errs <- fmt.Errorf("failed to scan sql table: %v (error: %v)", p.tableName, err)
+					errs <- fmt.Errorf("failed to scan sql table: %v (error: %v)", p.sourceName(), err)
 					continue
 				}
 
@@ -171,7 +206,7 @@ loop:
 
 				r, err := p.serialize(record)
 				if err != nil {
-					errs <- fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.tableName, err)
+					errs <- fmt.Errorf("failed to serialize sql table: %v (error: %v)", p.sourceName(), err)
 					continue
 				}
 
@@ -191,7 +226,7 @@ loop:
 		}
 	}
 	if extractedTotal == 0 {
-		p.logger.Info(fmt.Sprintf("no records found in %v", p.tableName))
+		p.logger.Info(fmt.Sprintf("no records found in %v", p.sourceName()))
 	}
 
 	return nil
@@ -203,6 +238,7 @@ func (p *InputPluginSql) CloseConnection() error {
 
 type InputPluginSqlConfig struct {
 	Table       string                                                          `yaml:"table"`
+	Query       string                                                          `yaml:"query"`
 	DatabaseUrl string                                                          `yaml:"database_url"`
 	Driver      string                                                          `yaml:"driver"`
 	PageSize    int                                                             `yaml:"pageSize"`
@@ -421,9 +457,29 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 		return nil, err
 	}
 
+	// Raw query mode: schema is ignored, return values as-is
+	if dbConfig.Query != "" {
+		return NewInputPluginSql(
+			db,
+			"",
+			dbConfig.Query,
+			dbConfig.Driver,
+			dbConfig.PageSize,
+			func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
+				record := NewGallonRecord()
+				for pair := item.Oldest(); pair != nil; pair = pair.Next() {
+					record.Set(pair.Key, pair.Value)
+				}
+				return record, nil
+			},
+		), nil
+	}
+
+	// Table mode: apply schema transformations
 	return NewInputPluginSql(
 		db,
 		dbConfig.Table,
+		"",
 		dbConfig.Driver,
 		dbConfig.PageSize,
 		func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
