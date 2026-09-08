@@ -13,7 +13,7 @@ require (
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-sql-driver/mysql v1.9.2
 	github.com/google/uuid v1.6.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.12.3
 	github.com/ory/dockertest/v3 v3.12.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
