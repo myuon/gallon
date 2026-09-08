@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// BQ gzip JSON load jobs fail above this size instead of splitting the file.
+const gzipJSONMaxBytes = 4 << 30
+
+type bqFormat string
+type bqCompression string
+
+const (
+	bqFormatJSON      bqFormat      = "json"
+	bqCompressionNone bqCompression = "none"
+	bqCompressionGzip bqCompression = "gzip"
+)
+
 type OutputPluginBigQuery struct {
 	logger               logr.Logger
 	client               *bigquery.Client
@@ -27,6 +40,8 @@ type OutputPluginBigQuery struct {
 	schema               bigquery.Schema
 	deserialize          func(GallonRecord) ([]bigquery.Value, error)
 	deleteTemporaryTable bool
+	format               bqFormat
+	compression          bqCompression
 }
 
 func NewOutputPluginBigQuery(
@@ -80,6 +95,45 @@ func (p *OutputPluginBigQuery) Cleanup() error {
 	return p.client.Close()
 }
 
+func gzipJSONLoadReader(r io.Reader, decompress bool) (io.ReadCloser, error) {
+	if decompress {
+		return gzip.NewReader(r)
+	}
+	return io.NopCloser(r), nil
+}
+
+func parseBigQueryLoadOptions(format, compression string) (bqFormat, bqCompression, error) {
+	parsedFormat := bqFormat(strings.ToLower(strings.TrimSpace(format)))
+	switch parsedFormat {
+	case "", bqFormatJSON:
+		parsedFormat = bqFormatJSON
+	default:
+		return "", "", fmt.Errorf("unsupported bigquery format %q (supported: json)", format)
+	}
+
+	parsedCompression := bqCompression(strings.ToLower(strings.TrimSpace(compression)))
+	switch parsedCompression {
+	case "", bqCompressionNone:
+		parsedCompression = bqCompressionNone
+	case bqCompressionGzip:
+		parsedCompression = bqCompressionGzip
+	default:
+		return "", "", fmt.Errorf("unsupported bigquery compression %q (supported: none, gzip)", compression)
+	}
+
+	return parsedFormat, parsedCompression, nil
+}
+
+func (p *OutputPluginBigQuery) gzipJSON() bool {
+	// Empty format is JSON, matching parseBigQueryLoadOptions and the constructor zero value.
+	return (p.format == "" || p.format == bqFormatJSON) && p.compression == bqCompressionGzip
+}
+
+func (p *OutputPluginBigQuery) decompressGzipForLoad() bool {
+	// bigquery-emulator JSON load uses encoding/json and never gunzips.
+	return p.gzipJSON() && p.endpoint != nil
+}
+
 func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, tableId string) error {
 	timeout := time.After(300 * time.Second)
 	ticker := time.NewTicker(10 * time.Second)
@@ -129,8 +183,11 @@ func (p *OutputPluginBigQuery) Load(
 
 	loadedTotal := 0
 
-	temporaryJsonlFilePath := fmt.Sprintf("%v.jsonl.gz", temporaryTableId)
-	temporaryFile, err := os.CreateTemp("", temporaryJsonlFilePath)
+	pattern := temporaryTableId + "-*.jsonl"
+	if p.gzipJSON() {
+		pattern += ".gz"
+	}
+	temporaryFile, err := os.CreateTemp("", pattern)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %v", err)
 	}
@@ -140,8 +197,14 @@ func (p *OutputPluginBigQuery) Load(
 		}
 	}()
 
-	temporaryFileGzipWriter := gzip.NewWriter(temporaryFile)
-	temporaryFileWriter := json.NewEncoder(temporaryFileGzipWriter)
+	var encoder *json.Encoder
+	var gzipWriter *gzip.Writer
+	if p.gzipJSON() {
+		gzipWriter = gzip.NewWriter(temporaryFile)
+		encoder = json.NewEncoder(gzipWriter)
+	} else {
+		encoder = json.NewEncoder(temporaryFile)
+	}
 
 loop:
 	for {
@@ -165,7 +228,7 @@ loop:
 					mp.Set(v.Name, values[i])
 				}
 
-				if err := temporaryFileWriter.Encode(mp); err != nil {
+				if err := encoder.Encode(mp); err != nil {
 					errs <- fmt.Errorf("failed to write to temporary file: %v, %v", values, err)
 					continue
 				}
@@ -178,8 +241,10 @@ loop:
 		}
 	}
 
-	if err := temporaryFileGzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip writer: %v", err)
+	if gzipWriter != nil {
+		if err := gzipWriter.Close(); err != nil {
+			return fmt.Errorf("failed to close gzip writer: %v", err)
+		}
 	}
 
 	if err := temporaryFile.Close(); err != nil {
@@ -192,23 +257,39 @@ loop:
 	if err != nil {
 		return fmt.Errorf("failed to open temporary file: %v", err)
 	}
+	defer temporaryFile.Close()
 
-	p.logger.Info(fmt.Sprintf("opened temporary file %v", temporaryFile.Name()))
-
-	reader, err := gzip.NewReader(temporaryFile)
+	info, err := temporaryFile.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to create gzip reader: %v", err)
+		return fmt.Errorf("failed to stat temporary file: %w", err)
+	}
+	fileBytes := info.Size()
+	p.logger.Info("opened temporary file",
+		"path", temporaryFile.Name(),
+		"bytes", fileBytes,
+		"format", p.format,
+		"compression", p.compression,
+	)
+
+	decompress := p.decompressGzipForLoad()
+	if p.gzipJSON() && !decompress && fileBytes > gzipJSONMaxBytes {
+		return fmt.Errorf("gzip JSON is %d bytes; BigQuery rejects files over 4GiB and Gallon does not split them", fileBytes)
 	}
 
-	p.logger.Info(fmt.Sprintf("created gzip reader"))
+	loadReader, err := gzipJSONLoadReader(temporaryFile, decompress)
+	if err != nil {
+		return fmt.Errorf("gzip json reader: %w", err)
+	}
+	defer loadReader.Close()
 
-	source := bigquery.NewReaderSource(reader)
+	source := bigquery.NewReaderSource(loadReader)
 	source.SourceFormat = bigquery.JSON
 	source.Schema = p.schema
 
 	loader := temporaryTable.LoaderFrom(source)
 	loader.WriteDisposition = bigquery.WriteTruncate
 
+	loadStartedAt := time.Now()
 	job, err := loader.Run(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load: %v", err)
@@ -221,7 +302,14 @@ loop:
 		return fmt.Errorf("job failed: %v (details: %v)", err, status.Errors)
 	}
 
-	p.logger.Info(fmt.Sprintf("loaded into %v", temporaryTable.TableID))
+	p.logger.Info("loaded into temporary table",
+		"tableId", temporaryTable.TableID,
+		"bytes", fileBytes,
+		"format", p.format,
+		"compression", p.compression,
+		"decompressed", decompress,
+		"elapsed", time.Since(loadStartedAt),
+	)
 
 	// NOTE: CopierFrom is not supported by bigquery-emulator
 	// copier := p.client.Dataset(p.datasetId).Table(p.tableId).CopierFrom(temporaryTable)
@@ -254,6 +342,8 @@ type OutputPluginBigQueryConfig struct {
 	Endpoint             *string                                                               `yaml:"endpoint"`
 	Schema               orderedmap.OrderedMap[string, OutputPluginBigQueryConfigSchemaColumn] `yaml:"schema"`
 	DeleteTemporaryTable *bool                                                                 `yaml:"deleteTemporaryTable"`
+	Format               string                                                                `yaml:"format"`
+	Compression          string                                                                `yaml:"compression"`
 }
 
 type OutputPluginBigQueryConfigSchemaColumn struct {
@@ -268,6 +358,11 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 	}
 
 	config := outConfig.Out
+
+	format, compression, err := parseBigQueryLoadOptions(config.Format, config.Compression)
+	if err != nil {
+		return nil, err
+	}
 
 	options := []option.ClientOption{}
 
@@ -290,7 +385,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		deleteTemporaryTable = *config.DeleteTemporaryTable
 	}
 
-	return NewOutputPluginBigQuery(
+	p := NewOutputPluginBigQuery(
 		client,
 		config.Endpoint,
 		config.DatasetId,
@@ -339,7 +434,10 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 			return values, nil
 		},
 		deleteTemporaryTable,
-	), nil
+	)
+	p.format = format
+	p.compression = compression
+	return p, nil
 }
 
 func deserializeRecord(data map[string]any, schema bigquery.Schema) (map[string]bigquery.Value, error) {

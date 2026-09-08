@@ -356,6 +356,8 @@ out:
     - For `record` type, define nested fields in `fields` properties
   - fields: for `record` type, define nested fields
 - deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
+- format: Load file format (optional, default: `json`). Currently only `json` is supported. `parquet` is reserved for later.
+- compression: File compression for JSON loads (optional, default: `none`). gzip JSON is limited to 4GiB per file. bigquery-emulator does not accept gzip, so `endpoint` still uploads uncompressed JSON.
 
 ### File Output Plugin
 
