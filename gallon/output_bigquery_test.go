@@ -117,7 +117,9 @@ func Test_parseBigQueryLoadOptions(t *testing.T) {
 		{name: "defaults", wantFormat: bqFormatJSON, wantComp: bqCompressionNone},
 		{name: "json gzip", format: "JSON", compression: "GZIP", wantFormat: bqFormatJSON, wantComp: bqCompressionGzip},
 		{name: "explicit none", format: "json", compression: "none", wantFormat: bqFormatJSON, wantComp: bqCompressionNone},
-		{name: "parquet reserved", format: "parquet", wantErr: "unsupported bigquery format"},
+		{name: "parquet", format: "parquet", wantFormat: bqFormatParquet, wantComp: bqCompressionNone},
+		{name: "parquet gzip unsupported", format: "parquet", compression: "gzip", wantErr: "only supported for json format"},
+		{name: "unknown format", format: "avro", wantErr: "unsupported bigquery format"},
 		{name: "unknown compression", compression: "snappy", wantErr: "unsupported bigquery compression"},
 	}
 

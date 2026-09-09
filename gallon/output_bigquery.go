@@ -27,6 +27,7 @@ type bqCompression string
 
 const (
 	bqFormatJSON      bqFormat      = "json"
+	bqFormatParquet   bqFormat      = "parquet"
 	bqCompressionNone bqCompression = "none"
 	bqCompressionGzip bqCompression = "gzip"
 )
@@ -107,8 +108,10 @@ func parseBigQueryLoadOptions(format, compression string) (bqFormat, bqCompressi
 	switch parsedFormat {
 	case "", bqFormatJSON:
 		parsedFormat = bqFormatJSON
+	case bqFormatParquet:
+		parsedFormat = bqFormatParquet
 	default:
-		return "", "", fmt.Errorf("unsupported bigquery format %q (supported: json)", format)
+		return "", "", fmt.Errorf("unsupported bigquery format %q (supported: json, parquet)", format)
 	}
 
 	parsedCompression := bqCompression(strings.ToLower(strings.TrimSpace(compression)))
@@ -119,6 +122,10 @@ func parseBigQueryLoadOptions(format, compression string) (bqFormat, bqCompressi
 		parsedCompression = bqCompressionGzip
 	default:
 		return "", "", fmt.Errorf("unsupported bigquery compression %q (supported: none, gzip)", compression)
+	}
+
+	if parsedFormat == bqFormatParquet && parsedCompression != bqCompressionNone {
+		return "", "", fmt.Errorf("compression %q is only supported for json format", compression)
 	}
 
 	return parsedFormat, parsedCompression, nil
@@ -184,7 +191,9 @@ func (p *OutputPluginBigQuery) Load(
 	loadedTotal := 0
 
 	pattern := temporaryTableId + "-*.jsonl"
-	if p.gzipJSON() {
+	if p.format == bqFormatParquet {
+		pattern = temporaryTableId + "-*.parquet"
+	} else if p.gzipJSON() {
 		pattern += ".gz"
 	}
 	temporaryFile, err := os.CreateTemp("", pattern)
@@ -197,53 +206,60 @@ func (p *OutputPluginBigQuery) Load(
 		}
 	}()
 
-	var encoder *json.Encoder
-	var gzipWriter *gzip.Writer
-	if p.gzipJSON() {
-		gzipWriter = gzip.NewWriter(temporaryFile)
-		encoder = json.NewEncoder(gzipWriter)
+	if p.format == bqFormatParquet {
+		if err := p.writeParquetLoadFile(ctx, temporaryFile, messages, errs); err != nil {
+			_ = temporaryFile.Close()
+			return err
+		}
 	} else {
-		encoder = json.NewEncoder(temporaryFile)
-	}
+		var encoder *json.Encoder
+		var gzipWriter *gzip.Writer
+		if p.gzipJSON() {
+			gzipWriter = gzip.NewWriter(temporaryFile)
+			encoder = json.NewEncoder(gzipWriter)
+		} else {
+			encoder = json.NewEncoder(temporaryFile)
+		}
 
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case msgs, ok := <-messages:
-			if !ok {
+	loop:
+		for {
+			select {
+			case <-ctx.Done():
 				break loop
-			}
-
-			for _, msg := range msgs {
-				values, err := p.deserialize(msg)
-				if err != nil {
-					errs <- fmt.Errorf("failed to deserialize: %v, %v", msg, err)
-					continue
+			case msgs, ok := <-messages:
+				if !ok {
+					break loop
 				}
 
-				mp := orderedmap.New[string, any]()
-				for i, v := range p.schema {
-					mp.Set(v.Name, values[i])
+				for _, msg := range msgs {
+					values, err := p.deserialize(msg)
+					if err != nil {
+						errs <- fmt.Errorf("failed to deserialize: %v, %v", msg, err)
+						continue
+					}
+
+					mp := orderedmap.New[string, any]()
+					for i, v := range p.schema {
+						mp.Set(v.Name, values[i])
+					}
+
+					if err := encoder.Encode(mp); err != nil {
+						errs <- fmt.Errorf("failed to write to temporary file: %v, %v", values, err)
+						continue
+					}
 				}
 
-				if err := encoder.Encode(mp); err != nil {
-					errs <- fmt.Errorf("failed to write to temporary file: %v, %v", values, err)
-					continue
+				if len(msgs) > 0 {
+					loadedTotal += len(msgs)
+					p.logger.Info(fmt.Sprintf("loaded %v rows", loadedTotal))
 				}
-			}
-
-			if len(msgs) > 0 {
-				loadedTotal += len(msgs)
-				p.logger.Info(fmt.Sprintf("loaded %v rows", loadedTotal))
 			}
 		}
-	}
 
-	if gzipWriter != nil {
-		if err := gzipWriter.Close(); err != nil {
-			return fmt.Errorf("failed to close gzip writer: %v", err)
+		if gzipWriter != nil {
+			if err := gzipWriter.Close(); err != nil {
+				return fmt.Errorf("failed to close gzip writer: %v", err)
+			}
 		}
 	}
 
@@ -276,14 +292,21 @@ loop:
 		return fmt.Errorf("gzip JSON is %d bytes; BigQuery rejects files over 4GiB and Gallon does not split them", fileBytes)
 	}
 
-	loadReader, err := gzipJSONLoadReader(temporaryFile, decompress)
-	if err != nil {
-		return fmt.Errorf("gzip json reader: %w", err)
+	var loadReader io.ReadCloser
+	sourceFormat := bigquery.JSON
+	if p.format == bqFormatParquet {
+		loadReader = io.NopCloser(temporaryFile)
+		sourceFormat = bigquery.Parquet
+	} else {
+		loadReader, err = gzipJSONLoadReader(temporaryFile, decompress)
+		if err != nil {
+			return fmt.Errorf("gzip json reader: %w", err)
+		}
 	}
 	defer loadReader.Close()
 
 	source := bigquery.NewReaderSource(loadReader)
-	source.SourceFormat = bigquery.JSON
+	source.SourceFormat = sourceFormat
 	source.Schema = p.schema
 
 	loader := temporaryTable.LoaderFrom(source)
