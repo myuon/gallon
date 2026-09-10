@@ -403,6 +403,12 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		return nil, err
 	}
 
+	if format == bqFormatParquet {
+		if err := validateParquetSchema(schema, ""); err != nil {
+			return nil, err
+		}
+	}
+
 	deleteTemporaryTable := true
 	if config.DeleteTemporaryTable != nil {
 		deleteTemporaryTable = *config.DeleteTemporaryTable

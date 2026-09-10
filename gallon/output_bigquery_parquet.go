@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -107,13 +108,34 @@ func parquetNodeFromBigQueryField(field *bigquery.FieldSchema) (parquet.Node, er
 		return parquet.Leaf(parquet.BooleanType), nil
 	case bigquery.TimestampFieldType:
 		return parquet.Timestamp(parquet.Microsecond), nil
-	case bigquery.JSONFieldType:
-		return parquet.JSON(), nil
 	case bigquery.RecordFieldType:
 		return parquetGroupFromBigQuery(field.Schema)
 	default:
 		return nil, fmt.Errorf("unsupported bigquery type for parquet: %s", field.Type)
 	}
+}
+
+// validateParquetSchema rejects field types that a Parquet load job cannot
+// produce, so the config fails at startup instead of during the load.
+func validateParquetSchema(schema bigquery.Schema, path string) error {
+	for _, field := range schema {
+		name := field.Name
+		if path != "" {
+			name = path + "." + name
+		}
+
+		switch field.Type {
+		case bigquery.JSONFieldType:
+			// BigQuery rejects JSON in a Parquet load schema outright, and
+			// without a schema it reads the JSON logical type back as BYTES.
+			return fmt.Errorf("field %s has type JSON, which the parquet format cannot load (use string, or drop format: parquet)", name)
+		case bigquery.RecordFieldType:
+			if err := validateParquetSchema(field.Schema, name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func convertValuesForParquet(schema bigquery.Schema, values []bigquery.Value) (map[string]any, error) {
@@ -138,25 +160,40 @@ func convertValueForParquet(field *bigquery.FieldSchema, value any) (any, error)
 	}
 
 	switch field.Type {
-	case bigquery.StringFieldType, bigquery.JSONFieldType:
-		return toParquetBytes(value)
+	case bigquery.StringFieldType:
+		s, err := toParquetString(value)
+		if err != nil {
+			return nil, err
+		}
+		return &s, nil
 	case bigquery.IntegerFieldType:
-		return toInt64(value)
+		i, err := toInt64(value)
+		if err != nil {
+			return nil, err
+		}
+		return &i, nil
 	case bigquery.FloatFieldType:
-		return toFloat64(value)
+		f, err := toFloat64(value)
+		if err != nil {
+			return nil, err
+		}
+		return &f, nil
 	case bigquery.BooleanFieldType:
 		b, ok := value.(bool)
 		if !ok {
 			return nil, fmt.Errorf("cannot convert %T to bool", value)
 		}
-		return b, nil
+		return &b, nil
 	case bigquery.TimestampFieldType:
 		t, err := toTime(value)
 		if err != nil {
 			return nil, err
 		}
-		return t.UTC().UnixMicro(), nil
+		micros := t.UTC().UnixMicro()
+		return &micros, nil
 	case bigquery.RecordFieldType:
+		// A group is optional through the map itself: a non-nil map is present,
+		// a nil one is null, so records need no pointer.
 		return convertRecordForParquet(field.Schema, value)
 	default:
 		return nil, fmt.Errorf("unsupported bigquery type for parquet: %s", field.Type)
@@ -191,7 +228,7 @@ func convertRecordForParquet(schema bigquery.Schema, value any) (map[string]any,
 	return converted, nil
 }
 
-func toParquetBytes(value any) (any, error) {
+func toParquetString(value any) (string, error) {
 	switch v := value.(type) {
 	case string:
 		return v, nil
@@ -200,7 +237,7 @@ func toParquetBytes(value any) (any, error) {
 	default:
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		return string(jsonBytes), nil
 	}
@@ -210,8 +247,26 @@ func toInt64(value any) (int64, error) {
 	switch v := value.(type) {
 	case int:
 		return int64(v), nil
+	case int8:
+		return int64(v), nil
+	case int16:
+		return int64(v), nil
+	case int32:
+		return int64(v), nil
 	case int64:
 		return v, nil
+	case uint:
+		return uintToInt64(uint64(v))
+	case uint8:
+		return int64(v), nil
+	case uint16:
+		return int64(v), nil
+	case uint32:
+		return int64(v), nil
+	case uint64:
+		return uintToInt64(v)
+	case float32:
+		return int64(v), nil
 	case float64:
 		return int64(v), nil
 	case string:
@@ -221,13 +276,38 @@ func toInt64(value any) (int64, error) {
 	}
 }
 
+func uintToInt64(v uint64) (int64, error) {
+	if v > math.MaxInt64 {
+		return 0, fmt.Errorf("%d overflows int64", v)
+	}
+	return int64(v), nil
+}
+
 func toFloat64(value any) (float64, error) {
 	switch v := value.(type) {
+	case float32:
+		return float64(v), nil
 	case float64:
 		return v, nil
+	case int:
+		return float64(v), nil
+	case int8:
+		return float64(v), nil
+	case int16:
+		return float64(v), nil
+	case int32:
+		return float64(v), nil
 	case int64:
 		return float64(v), nil
-	case int:
+	case uint:
+		return float64(v), nil
+	case uint8:
+		return float64(v), nil
+	case uint16:
+		return float64(v), nil
+	case uint32:
+		return float64(v), nil
+	case uint64:
 		return float64(v), nil
 	case string:
 		return strconv.ParseFloat(v, 64)
