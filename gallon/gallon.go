@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -91,7 +92,9 @@ type Gallon struct {
 
 // Run starts goroutines for extract and load, and waits for them to finish.
 //
-// If too many errors are occurred, it will cancel the context and return ErrTooManyErrors.
+// A failing Extract or Load cancels the context and is returned, so a caller
+// can tell a finished migration from a failed one. If too many errors are
+// occurred, it returns ErrTooManyErrors.
 func (g *Gallon) Run(ctx context.Context) error {
 	g.Input.ReplaceLogger(g.Logger)
 	g.Output.ReplaceLogger(g.Logger)
@@ -115,6 +118,7 @@ func (g *Gallon) Run(ctx context.Context) error {
 
 		if err := g.Input.Extract(ctx, messages, errs); err != nil {
 			g.Logger.Error(err, "failed to extract")
+			cancel(fmt.Errorf("failed to extract: %w", err))
 		}
 	}(ctx)
 
@@ -129,6 +133,7 @@ func (g *Gallon) Run(ctx context.Context) error {
 
 		if err := g.Output.Load(ctx, messages, errs); err != nil {
 			g.Logger.Error(err, "failed to load")
+			cancel(fmt.Errorf("failed to load: %w", err))
 		}
 	}(ctx)
 
@@ -152,16 +157,15 @@ func (g *Gallon) Run(ctx context.Context) error {
 		}
 	}()
 
-	for {
-		select {
-		case <-ctx.Done():
-			if context.Cause(ctx) == ErrTooManyErrors {
-				return ErrTooManyErrors
-			}
+	<-ctx.Done()
 
-			return nil
-		}
+	// The load goroutine cancels with a nil cause once it is done, which
+	// context.Cause reports as context.Canceled. Any other cause is a failure.
+	if cause := context.Cause(ctx); !errors.Is(cause, context.Canceled) {
+		return cause
 	}
+
+	return nil
 }
 
 var ErrTooManyErrors = errors.New("too many errors")
