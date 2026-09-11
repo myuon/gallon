@@ -387,17 +387,8 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		return nil, err
 	}
 
-	options := []option.ClientOption{}
-
-	if config.Endpoint != nil {
-		options = append(options, option.WithEndpoint(*config.Endpoint), option.WithoutAuthentication())
-	}
-
-	client, err := bigquery.NewClient(context.Background(), config.ProjectId, options...)
-	if err != nil {
-		return nil, err
-	}
-
+	// Validate the config before constructing the client, so a bad config is
+	// reported without needing credentials.
 	schema, err := getSchemaFromConfig(config.Schema)
 	if err != nil {
 		return nil, err
@@ -407,6 +398,17 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 		if err := validateParquetSchema(schema, ""); err != nil {
 			return nil, err
 		}
+	}
+
+	options := []option.ClientOption{}
+
+	if config.Endpoint != nil {
+		options = append(options, option.WithEndpoint(*config.Endpoint), option.WithoutAuthentication())
+	}
+
+	client, err := bigquery.NewClient(context.Background(), config.ProjectId, options...)
+	if err != nil {
+		return nil, err
 	}
 
 	deleteTemporaryTable := true
