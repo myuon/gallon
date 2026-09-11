@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/bigquery v1.83.0
-	github.com/aws/aws-sdk-go-v2 v1.45.1
+	github.com/aws/aws-sdk-go-v2 v1.46.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.65.1
