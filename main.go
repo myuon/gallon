@@ -38,6 +38,8 @@ func main() {
 
 	if err := roomCmd.Execute(); err != nil {
 		zap.S().Error(err)
+		zapLog.Sync()
+		os.Exit(1)
 	}
 }
 

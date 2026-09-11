@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,16 +32,17 @@ var RunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run a migration",
 	Args:  cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	// A failed migration is not a usage error, and main reports the error
+	// through the logger, so cobra must not print it a second time.
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
 		configPath := args[0]
 
-		if err := RunGallonWithPath(configPath, RunGallonOptions{
+		return RunGallonWithPath(configPath, RunGallonOptions{
 			AsTemplate: withTemplate || withTemplateWithEnv,
 			WithEnv:    withTemplateWithEnv,
-		}); err != nil {
-			zap.S().Error(err)
-			return
-		}
+		})
 	},
 }
 
@@ -50,6 +52,9 @@ type WithTypeConfig struct {
 
 // RunGallonWithPath runs a migration with the given config file path.
 // You can use glob pattern to run multiple config files.
+//
+// Every config file is attempted even if an earlier one fails; the failures are
+// joined into the returned error.
 func RunGallonWithPath(configPath string, opts RunGallonOptions) error {
 	files, err := filepath.Glob(configPath)
 	if err != nil {
@@ -58,22 +63,26 @@ func RunGallonWithPath(configPath string, opts RunGallonOptions) error {
 
 	zap.S().Infow("Detected config files", "files", files)
 
+	var errs []error
+
 	for _, file := range files {
 		zap.S().Infow("RunGallon", "path", file)
 
 		configFileBody, err := os.ReadFile(file)
 		if err != nil {
 			zap.S().Errorw("Failed to read config file", "path", file, "error", err)
+			errs = append(errs, fmt.Errorf("failed to read config file %v: %w", file, err))
 			continue
 		}
 
 		if err := RunGallonWithOptions(configFileBody, opts); err != nil {
 			zap.S().Errorw("Failed to run gallon", "path", file, "error", err)
+			errs = append(errs, fmt.Errorf("failed to run gallon for %v: %w", file, err))
 			continue
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 type RunGallonOptions struct {
