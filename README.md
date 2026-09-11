@@ -324,6 +324,7 @@ out:
   datasetId: test
   tableId: users_test
   endpoint: "http://localhost:9050"
+  format: parquet
   schema:
     id:
       type: string
@@ -356,8 +357,10 @@ out:
     - For `record` type, define nested fields in `fields` properties
   - fields: for `record` type, define nested fields
 - deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
-- format: Load file format (optional, default: `json`). Currently only `json` is supported. `parquet` is reserved for later.
-- compression: File compression for JSON loads (optional, default: `none`). gzip JSON is limited to 4GiB per file. bigquery-emulator does not accept gzip, so `endpoint` still uploads uncompressed JSON.
+- format: Load file format (optional, default: `json`). Supported: `json`, `parquet`. Parquet pages are compressed with ZSTD.
+  - `parquet` does not support the `json` column type: a Parquet load job rejects a JSON field in the schema, and BigQuery reads the Parquet JSON logical type back as `BYTES`. Use `string` instead.
+  - `parquet` buffers a row group in memory, so it uses roughly twice the peak heap of the JSON path.
+- compression: File compression for JSON loads (optional, default: `none`). Supported: `none`, `gzip`. Not used with `parquet`. gzip JSON is limited to 4GiB per file. bigquery-emulator does not accept gzip, so `endpoint` still uploads uncompressed JSON.
 
 ### File Output Plugin
 
