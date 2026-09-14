@@ -3,9 +3,11 @@ package gallon
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -137,4 +139,31 @@ func Test_parseBigQueryLoadOptions(t *testing.T) {
 			assert.Equal(t, tt.wantComp, compression)
 		})
 	}
+}
+
+type cleanupCtxKey struct{}
+
+func Test_cleanupContext_survivesCanceledParent(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.WithValue(context.Background(), cleanupCtxKey{}, "value"))
+	cancelParent()
+	assert.ErrorIs(t, parent.Err(), context.Canceled)
+
+	cleanupCtx, cancel := cleanupContext(parent)
+	defer cancel()
+
+	// The delete must still run after Gallon.Run cancels the migration context,
+	// otherwise the temporary table is left behind.
+	assert.NoError(t, cleanupCtx.Err())
+	assert.Equal(t, "value", cleanupCtx.Value(cleanupCtxKey{}))
+
+	deadline, ok := cleanupCtx.Deadline()
+	assert.True(t, ok)
+	assert.WithinDuration(t, time.Now().Add(deleteTemporaryTableTimeout), deadline, time.Second)
+}
+
+func Test_cleanupContext_isCanceledByItsOwnCancelFunc(t *testing.T) {
+	cleanupCtx, cancel := cleanupContext(context.Background())
+	cancel()
+
+	assert.ErrorIs(t, cleanupCtx.Err(), context.Canceled)
 }
