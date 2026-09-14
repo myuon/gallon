@@ -22,6 +22,10 @@ import (
 // BQ gzip JSON load jobs fail above this size instead of splitting the file.
 const gzipJSONMaxBytes = 4 << 30
 
+// Table.Delete retries backendError and rateLimitExceeded until its context ends, so the
+// detached delete needs a bound of its own. Same 300s that waitUntilTableCreation allows.
+const deleteTemporaryTableTimeout = 300 * time.Second
+
 type bqFormat string
 type bqCompression string
 
@@ -159,6 +163,12 @@ func (p *OutputPluginBigQuery) waitUntilTableCreation(ctx context.Context, table
 	}
 }
 
+// Gallon.Run cancels ctx on an Extract failure, on ErrTooManyErrors, and when
+// the caller cancels; deleting on it would leave the temporary table behind.
+func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), deleteTemporaryTableTimeout)
+}
+
 func (p *OutputPluginBigQuery) Load(
 	ctx context.Context,
 	messages chan []GallonRecord,
@@ -173,12 +183,17 @@ func (p *OutputPluginBigQuery) Load(
 	}
 
 	defer func() {
-		if p.deleteTemporaryTable {
-			if err := temporaryTable.Delete(ctx); err != nil {
-				p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
-			} else {
-				p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
-			}
+		if !p.deleteTemporaryTable {
+			return
+		}
+
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+
+		if err := temporaryTable.Delete(cleanupCtx); err != nil {
+			p.logger.Error(err, "failed to delete temporary table", "tableId", temporaryTable.TableID)
+		} else {
+			p.logger.Info("temporary table deleted", "tableId", temporaryTable.TableID)
 		}
 	}()
 
