@@ -3,11 +3,15 @@ package gallon
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"os"
 	"testing"
 
+	"cloud.google.com/go/bigquery"
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func writeTempGzip(t *testing.T, payload []byte) *os.File {
@@ -91,16 +95,94 @@ func Test_decompressGzipForLoad(t *testing.T) {
 		endpoint    *string
 		want        bool
 	}{
-		{name: "default uncompressed", format: bqFormatJSON, compression: bqCompressionNone, want: false},
+		// The temporary file is always gzip, so every JSON case except an
+		// as-is gzip upload has to be decompressed on the way out.
+		{name: "default uncompressed", format: bqFormatJSON, compression: bqCompressionNone, want: true},
 		{name: "gzip to production", format: bqFormatJSON, compression: bqCompressionGzip, want: false},
 		{name: "gzip to emulator", format: bqFormatJSON, compression: bqCompressionGzip, endpoint: &endpoint, want: true},
-		{name: "uncompressed emulator", format: bqFormatJSON, compression: bqCompressionNone, endpoint: &endpoint, want: false},
+		{name: "uncompressed emulator", format: bqFormatJSON, compression: bqCompressionNone, endpoint: &endpoint, want: true},
+		{name: "parquet", format: bqFormatParquet, compression: bqCompressionNone, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &OutputPluginBigQuery{format: tt.format, compression: tt.compression, endpoint: tt.endpoint}
 			assert.Equal(t, tt.want, p.decompressGzipForLoad())
+		})
+	}
+}
+
+func Test_uploadGzipJSON(t *testing.T) {
+	endpoint := "http://localhost:9050"
+
+	tests := []struct {
+		name        string
+		format      bqFormat
+		compression bqCompression
+		endpoint    *string
+		want        bool
+	}{
+		{name: "default uncompressed", format: bqFormatJSON, compression: bqCompressionNone, want: false},
+		{name: "gzip to production", format: bqFormatJSON, compression: bqCompressionGzip, want: true},
+		{name: "gzip to emulator", format: bqFormatJSON, compression: bqCompressionGzip, endpoint: &endpoint, want: false},
+		{name: "parquet", format: bqFormatParquet, compression: bqCompressionNone, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &OutputPluginBigQuery{format: tt.format, compression: tt.compression, endpoint: tt.endpoint}
+			assert.Equal(t, tt.want, p.uploadGzipJSON())
+		})
+	}
+}
+
+// The temporary file has to stay gzipped on disk whatever compression says:
+// an uncompressed dump of a large table fills the disk and kills the task.
+func Test_writeGzipJSONLoadFile_writesGzipWhateverTheCompression(t *testing.T) {
+	for _, compression := range []bqCompression{bqCompressionNone, bqCompressionGzip} {
+		t.Run(string(compression), func(t *testing.T) {
+			schema := bigquery.Schema{
+				{Name: "id", Type: bigquery.StringFieldType},
+				{Name: "age", Type: bigquery.IntegerFieldType},
+			}
+			p := &OutputPluginBigQuery{
+				logger:      logr.Discard(),
+				schema:      schema,
+				format:      bqFormatJSON,
+				compression: compression,
+				deserialize: func(r GallonRecord) ([]bigquery.Value, error) {
+					id, _ := r.Get("id")
+					age, _ := r.Get("age")
+					return []bigquery.Value{id, age}, nil
+				},
+			}
+
+			file, err := os.CreateTemp(t.TempDir(), "load-*.jsonl.gz")
+			require.NoError(t, err)
+
+			record := NewGallonRecord()
+			record.Set("id", "user-1")
+			record.Set("age", 30)
+
+			messages := make(chan []GallonRecord, 1)
+			messages <- []GallonRecord{record}
+			close(messages)
+			errs := make(chan error, 1)
+
+			require.NoError(t, p.writeGzipJSONLoadFile(context.Background(), file, messages, errs))
+			require.NoError(t, file.Close())
+			assert.Empty(t, errs)
+
+			written, err := os.ReadFile(file.Name())
+			require.NoError(t, err)
+			assert.Equal(t, []byte{0x1f, 0x8b}, written[:2], "temporary file must be gzip")
+
+			zr, err := gzip.NewReader(bytes.NewReader(written))
+			require.NoError(t, err)
+			defer zr.Close()
+			decoded, err := io.ReadAll(zr)
+			require.NoError(t, err)
+			assert.Equal(t, "{\"id\":\"user-1\",\"age\":30}\n", string(decoded))
 		})
 	}
 }

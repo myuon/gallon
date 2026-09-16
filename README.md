@@ -360,7 +360,8 @@ out:
 - format: Load file format (optional, default: `json`). Supported: `json`, `parquet`. Parquet pages are compressed with ZSTD.
   - `parquet` does not support the `json` column type: a Parquet load job rejects a JSON field in the schema, and BigQuery reads the Parquet JSON logical type back as `BYTES`. Use `string` instead.
   - `parquet` buffers a row group in memory, so it uses roughly twice the peak heap of the JSON path.
-- compression: File compression for JSON loads (optional, default: `none`). Supported: `none`, `gzip`. Not used with `parquet`. gzip JSON is limited to 4GiB per file. bigquery-emulator does not accept gzip, so `endpoint` still uploads uncompressed JSON.
+- compression: Compression of the bytes uploaded to BigQuery for JSON loads (optional, default: `none`). Supported: `none`, `gzip`. Not used with `parquet`. gzip JSON is limited to 4GiB per file. bigquery-emulator does not accept gzip, so `endpoint` still uploads uncompressed JSON.
+  - The JSON temporary file is always gzipped on disk regardless of this setting, so a large table does not fill up the disk. `none` gunzips it while streaming to BigQuery.
 
 ### File Output Plugin
 
