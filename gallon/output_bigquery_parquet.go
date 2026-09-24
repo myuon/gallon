@@ -13,6 +13,35 @@ import (
 	parquet "github.com/parquet-go/parquet-go"
 )
 
+// defaultParquetMaxRowsPerRowGroup bounds each Parquet row group. parquet-go
+// defaults to an unlimited row group, so the whole file becomes one row group.
+// BigQuery reads a Parquet file row group by row group, and a single row group
+// of a ~39M-row table (~7 GB zstd) fails the load job with "Resources exceeded
+// during query execution". The writer also buffers the current row group in
+// memory, so an unbounded row group makes the heap grow with the table.
+//
+// BigQuery recommends row groups of at least 16 MiB. At ~186 bytes per row
+// after zstd (~1.5 KB per row as JSONL), 100k rows is ~18 MB compressed and
+// ~150 MB uncompressed: big enough for load throughput, small enough for
+// BigQuery and for the writer's memory.
+const defaultParquetMaxRowsPerRowGroup = 100_000
+
+// parseParquetMaxRowsPerRowGroup validates parquetMaxRowsPerRowGroup at
+// startup, the same way parseBigQueryLoadOptions rejects compression with
+// parquet.
+func parseParquetMaxRowsPerRowGroup(format bqFormat, value *int) (int64, error) {
+	if value == nil {
+		return defaultParquetMaxRowsPerRowGroup, nil
+	}
+	if format != bqFormatParquet {
+		return 0, fmt.Errorf("parquetMaxRowsPerRowGroup is only supported with format: parquet")
+	}
+	if *value <= 0 {
+		return 0, fmt.Errorf("parquetMaxRowsPerRowGroup must be positive, got %d", *value)
+	}
+	return int64(*value), nil
+}
+
 func (p *OutputPluginBigQuery) writeParquetLoadFile(
 	ctx context.Context,
 	temporaryFile *os.File,
@@ -28,6 +57,7 @@ func (p *OutputPluginBigQuery) writeParquetLoadFile(
 		temporaryFile,
 		parquetSchema,
 		parquet.Compression(&parquet.Zstd),
+		parquet.MaxRowsPerRowGroup(p.parquetMaxRowsPerRowGroup),
 	)
 	loadedTotal := 0
 

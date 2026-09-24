@@ -43,6 +43,8 @@ type OutputPluginBigQuery struct {
 	deleteTemporaryTable bool
 	format               bqFormat
 	compression          bqCompression
+	// parquetMaxRowsPerRowGroup is only used when format is parquet.
+	parquetMaxRowsPerRowGroup int64
 }
 
 func NewOutputPluginBigQuery(
@@ -62,6 +64,8 @@ func NewOutputPluginBigQuery(
 		schema:               schema,
 		deserialize:          deserialize,
 		deleteTemporaryTable: deleteTemporaryTable,
+
+		parquetMaxRowsPerRowGroup: defaultParquetMaxRowsPerRowGroup,
 	}
 }
 
@@ -367,6 +371,8 @@ type OutputPluginBigQueryConfig struct {
 	DeleteTemporaryTable *bool                                                                 `yaml:"deleteTemporaryTable"`
 	Format               string                                                                `yaml:"format"`
 	Compression          string                                                                `yaml:"compression"`
+	// ParquetMaxRowsPerRowGroup caps the rows per Parquet row group (optional, format: parquet only).
+	ParquetMaxRowsPerRowGroup *int `yaml:"parquetMaxRowsPerRowGroup"`
 }
 
 type OutputPluginBigQueryConfigSchemaColumn struct {
@@ -383,6 +389,11 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 	config := outConfig.Out
 
 	format, compression, err := parseBigQueryLoadOptions(config.Format, config.Compression)
+	if err != nil {
+		return nil, err
+	}
+
+	parquetMaxRowsPerRowGroup, err := parseParquetMaxRowsPerRowGroup(format, config.ParquetMaxRowsPerRowGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -468,6 +479,7 @@ func NewOutputPluginBigQueryFromConfig(configYml []byte) (*OutputPluginBigQuery,
 	)
 	p.format = format
 	p.compression = compression
+	p.parquetMaxRowsPerRowGroup = parquetMaxRowsPerRowGroup
 	return p, nil
 }
 

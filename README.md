@@ -359,6 +359,7 @@ out:
 - deleteTemporaryTable: Delete temporary table after copying (optional, default: true)
 - format: Load file format (optional, default: `json`). Supported: `json`, `parquet`. Parquet pages are compressed with ZSTD.
   - `parquet` does not support the `json` column type: a Parquet load job rejects a JSON field in the schema, and BigQuery reads the Parquet JSON logical type back as `BYTES`. Use `string` instead.
+  - `parquetMaxRowsPerRowGroup`: Maximum rows per Parquet row group (optional, default: `100000`). Only valid with `format: parquet`. BigQuery reads a Parquet file one row group at a time, so a single huge row group can fail the load with `Resources exceeded`, and the writer holds the current row group in memory, so this also bounds the peak heap. BigQuery recommends row groups of at least 16 MiB; lower this for very wide rows, raise it for very narrow ones.
   - `parquet` buffers a row group in memory, so it uses roughly twice the peak heap of the JSON path.
 - compression: File compression for JSON loads (optional, default: `none`). Supported: `none`, `gzip`. Not used with `parquet`. gzip JSON is limited to 4GiB per file. bigquery-emulator does not accept gzip, so `endpoint` still uploads uncompressed JSON.
 
