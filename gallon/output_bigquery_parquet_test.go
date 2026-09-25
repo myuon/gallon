@@ -2,10 +2,13 @@ package gallon
 
 import (
 	"bytes"
+	"context"
+	"os"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/go-logr/logr"
 	parquet "github.com/parquet-go/parquet-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -260,4 +263,128 @@ func Test_toFloat64(t *testing.T) {
 
 	_, err := toFloat64(struct{}{})
 	assert.ErrorContains(t, err, "cannot convert")
+}
+
+func Test_writeParquetLoadFile_splitsRowGroups(t *testing.T) {
+	schema := bigquery.Schema{
+		{Name: "id", Type: bigquery.IntegerFieldType},
+	}
+	p := NewOutputPluginBigQuery(nil, nil, "dataset1", "users", schema,
+		func(record GallonRecord) ([]bigquery.Value, error) {
+			id, _ := record.Get("id")
+			return []bigquery.Value{id}, nil
+		},
+		true,
+	)
+	p.ReplaceLogger(logr.Discard())
+	p.format = bqFormatParquet
+	p.parquetMaxRowsPerRowGroup = 3
+
+	messages := make(chan []GallonRecord, 1)
+	batch := []GallonRecord{}
+	for i := range 10 {
+		record := NewGallonRecord()
+		record.Set("id", int64(i))
+		batch = append(batch, record)
+	}
+	messages <- batch
+	close(messages)
+
+	temporaryFile, err := os.CreateTemp(t.TempDir(), "load-*.parquet")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = temporaryFile.Close() })
+
+	errs := make(chan error, 10)
+	require.NoError(t, p.writeParquetLoadFile(context.Background(), temporaryFile, messages, errs))
+	require.Empty(t, errs)
+
+	stat, err := temporaryFile.Stat()
+	require.NoError(t, err)
+	file, err := parquet.OpenFile(temporaryFile, stat.Size())
+	require.NoError(t, err)
+	assert.Equal(t, int64(10), file.NumRows())
+	// 10 rows at 3 rows per group: 3 + 3 + 3 + 1.
+	require.Len(t, file.RowGroups(), 4)
+	for i, want := range []int64{3, 3, 3, 1} {
+		assert.Equal(t, want, file.RowGroups()[i].NumRows(), "row group %d", i)
+	}
+
+	parquetSchema, err := parquetSchemaFromBigQuery(schema)
+	require.NoError(t, err)
+	reader := parquet.NewGenericReader[map[string]any](temporaryFile, parquetSchema)
+	defer reader.Close()
+	rows := make([]map[string]any, 10)
+	for i := range rows {
+		rows[i] = map[string]any{}
+	}
+	n, _ := reader.Read(rows) // io.EOF is expected once the last row is read
+	require.Equal(t, 10, n)
+	for i, row := range rows {
+		assert.Equal(t, int64(i), row["id"])
+	}
+}
+
+func Test_NewOutputPluginBigQueryFromConfig_parquetMaxRowsPerRowGroup(t *testing.T) {
+	baseConfig := `
+out:
+  type: bigquery
+  projectId: test
+  datasetId: dataset1
+  tableId: users
+  endpoint: http://localhost:9050
+  schema:
+    id:
+      type: string
+`
+
+	tests := []struct {
+		name    string
+		extra   string
+		want    int64
+		wantErr string
+	}{
+		{
+			name:  "defaults when omitted",
+			extra: "  format: parquet\n",
+			want:  defaultParquetMaxRowsPerRowGroup,
+		},
+		{
+			name:  "overrides the default",
+			extra: "  format: parquet\n  parquetMaxRowsPerRowGroup: 5000\n",
+			want:  5000,
+		},
+		{
+			name:    "zero is rejected",
+			extra:   "  format: parquet\n  parquetMaxRowsPerRowGroup: 0\n",
+			wantErr: "parquetMaxRowsPerRowGroup must be positive",
+		},
+		{
+			name:    "negative is rejected",
+			extra:   "  format: parquet\n  parquetMaxRowsPerRowGroup: -1\n",
+			wantErr: "parquetMaxRowsPerRowGroup must be positive",
+		},
+		{
+			name:    "json format is rejected",
+			extra:   "  format: json\n  parquetMaxRowsPerRowGroup: 5000\n",
+			wantErr: "only supported with format: parquet",
+		},
+		{
+			name:    "default format is rejected",
+			extra:   "  parquetMaxRowsPerRowGroup: 5000\n",
+			wantErr: "only supported with format: parquet",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := NewOutputPluginBigQueryFromConfig([]byte(baseConfig + tt.extra))
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = p.Cleanup() })
+			assert.Equal(t, tt.want, p.parquetMaxRowsPerRowGroup)
+		})
+	}
 }
