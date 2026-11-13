@@ -492,7 +492,7 @@ func extractAllRecords(t *testing.T, serialize func(orderedmap.OrderedMap[string
 
 func Test_newSqlSerializer_RawQuery_BytesBecomeString(t *testing.T) {
 	columns := []string{"id", "uuid", "n"}
-	rows := [][]any{{[]byte("1"), []byte("db806676-aaaa"), int64(7)}}
+	rows := [][]any{{int64(1), []byte("db806676-aaaa"), int64(7)}}
 
 	t.Run("without schema", func(t *testing.T) {
 		var schema orderedmap.OrderedMap[string, InputPluginSqlConfigSchemaColumn]
