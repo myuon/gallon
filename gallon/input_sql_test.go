@@ -495,7 +495,7 @@ func Test_newSqlSerializer_RawQuery_BytesBecomeString(t *testing.T) {
 	rows := [][]any{{int64(1), []byte("db806676-aaaa"), int64(7)}}
 
 	t.Run("without schema", func(t *testing.T) {
-		var schema orderedmap.OrderedMap[string, InputPluginSqlConfigSchemaColumn]
+		schema := *orderedmap.New[string, InputPluginSqlConfigSchemaColumn]()
 		records := extractAllRecords(t, newSqlSerializer(schema, true), columns, rows)
 		if len(records) != 1 {
 			t.Fatalf("got %d records, want 1", len(records))
@@ -509,7 +509,7 @@ func Test_newSqlSerializer_RawQuery_BytesBecomeString(t *testing.T) {
 	})
 
 	t.Run("with schema applies type, rename and drops unlisted columns", func(t *testing.T) {
-		var schema orderedmap.OrderedMap[string, InputPluginSqlConfigSchemaColumn]
+		schema := *orderedmap.New[string, InputPluginSqlConfigSchemaColumn]()
 		rename := "listing_id"
 		schema.Set("uuid", InputPluginSqlConfigSchemaColumn{Type: "string", Rename: &rename})
 		schema.Set("n", InputPluginSqlConfigSchemaColumn{Type: "int"})
