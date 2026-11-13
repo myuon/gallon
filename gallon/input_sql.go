@@ -696,67 +696,80 @@ func NewInputPluginSqlFromConfig(configYml []byte) (*InputPluginSql, error) {
 		return nil, err
 	}
 
-	// Raw query mode: schema is ignored, return values as-is
-	if dbConfig.Query != "" {
-		return NewInputPluginSqlWithPaginationKey(
-			db,
-			"",
-			dbConfig.Query,
-			dbConfig.Driver,
-			dbConfig.PageSize,
-			dbConfig.PaginationKey,
-			func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
-				record := NewGallonRecord()
-				for pair := item.Oldest(); pair != nil; pair = pair.Next() {
-					record.Set(pair.Key, pair.Value)
-				}
-				return record, nil
-			},
-		), nil
-	}
+	serialize := newSqlSerializer(dbConfig.Schema, dbConfig.Query != "")
 
-	// Table mode: apply schema transformations
 	return NewInputPluginSqlWithPaginationKey(
 		db,
 		dbConfig.Table,
-		"",
+		dbConfig.Query,
 		dbConfig.Driver,
 		dbConfig.PageSize,
 		dbConfig.PaginationKey,
-		func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
-			record := NewGallonRecord()
+		serialize,
+	), nil
+}
 
-			for pair := dbConfig.Schema.Oldest(); pair != nil; pair = pair.Next() {
-				value, ok := item.Get(pair.Key)
-				if !ok {
+// newSqlSerializer builds the row -> GallonRecord conversion.
+//
+// When schema has columns, only the columns listed in schema are emitted, each
+// converted by getValue -> transforms -> rename (both in table mode and raw
+// query mode).
+//
+// In raw query mode without a schema, every column is emitted as-is, except
+// that []byte values (which go-sql-driver/mysql returns for string columns)
+// are converted to string so they are not base64-encoded when serialized to
+// JSON. Table mode without a schema keeps emitting nothing.
+func newSqlSerializer(
+	schema orderedmap.OrderedMap[string, InputPluginSqlConfigSchemaColumn],
+	rawQuery bool,
+) func(orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
+	if rawQuery && schema.Len() == 0 {
+		return func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
+			record := NewGallonRecord()
+			for pair := item.Oldest(); pair != nil; pair = pair.Next() {
+				if b, ok := pair.Value.([]byte); ok {
+					record.Set(pair.Key, string(b))
 					continue
 				}
+				record.Set(pair.Key, pair.Value)
+			}
+			return record, nil
+		}
+	}
 
-				v, err := pair.Value.getValue(value)
-				if err != nil {
-					return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to get value for column: %v", pair.Key))
-				}
+	return func(item orderedmap.OrderedMap[string, any]) (GallonRecord, error) {
+		record := NewGallonRecord()
 
-				sourceType := pair.Value.Type
-
-				for _, transform := range pair.Value.Transforms {
-					v, err = transform.Transform(sourceType, v)
-					if err != nil {
-						return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to transform value for column: %v", pair.Key))
-					}
-
-					sourceType = transform.Type
-				}
-
-				columnName := pair.Key
-				if pair.Value.Rename != nil {
-					columnName = *pair.Value.Rename
-				}
-
-				record.Set(columnName, v)
+		for pair := schema.Oldest(); pair != nil; pair = pair.Next() {
+			value, ok := item.Get(pair.Key)
+			if !ok {
+				continue
 			}
 
-			return record, nil
-		},
-	), nil
+			v, err := pair.Value.getValue(value)
+			if err != nil {
+				return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to get value for column: %v", pair.Key))
+			}
+
+			sourceType := pair.Value.Type
+
+			for _, transform := range pair.Value.Transforms {
+				v, err = transform.Transform(sourceType, v)
+				if err != nil {
+					return GallonRecord{}, errors.Join(err, fmt.Errorf("failed to transform value for column: %v", pair.Key))
+				}
+
+				sourceType = transform.Type
+			}
+
+			columnName := pair.Key
+			if pair.Value.Rename != nil {
+				columnName = *pair.Value.Rename
+			}
+
+			record.Set(columnName, v)
+		}
+
+		return record, nil
+	}
 }
