@@ -447,3 +447,88 @@ func Test_parseTimezone_conversion(t *testing.T) {
 		})
 	}
 }
+
+func extractAllRecords(t *testing.T, serialize func(orderedmap.OrderedMap[string, any]) (GallonRecord, error), columns []string, rows [][]any) []GallonRecord {
+	t.Helper()
+
+	db, _, err := newFakeSqlDB(columns, rows, nil)
+	if err != nil {
+		t.Fatalf("failed to create fake sql db: %v", err)
+	}
+	defer db.Close()
+
+	plugin := NewInputPluginSqlWithPaginationKey(db, "", "SELECT * FROM t", "mysql", 10, "id", serialize)
+	plugin.ReplaceLogger(logr.Discard())
+
+	messages := make(chan []GallonRecord)
+	errs := make(chan error, 10)
+
+	var records []GallonRecord
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for msgs := range messages {
+			records = append(records, msgs...)
+		}
+	}()
+
+	extractErr := func() error {
+		defer close(messages)
+		return plugin.Extract(context.Background(), messages, errs)
+	}()
+	<-done
+
+	if extractErr != nil {
+		t.Fatalf("Extract returned error: %v", extractErr)
+	}
+	select {
+	case err := <-errs:
+		t.Fatalf("unexpected error on errs channel: %v", err)
+	default:
+	}
+
+	return records
+}
+
+func Test_newSqlSerializer_RawQuery_BytesBecomeString(t *testing.T) {
+	columns := []string{"id", "uuid", "n"}
+	rows := [][]any{{int64(1), []byte("db806676-aaaa"), int64(7)}}
+
+	t.Run("without schema", func(t *testing.T) {
+		schema := *orderedmap.New[string, InputPluginSqlConfigSchemaColumn]()
+		records := extractAllRecords(t, newSqlSerializer(schema, true), columns, rows)
+		if len(records) != 1 {
+			t.Fatalf("got %d records, want 1", len(records))
+		}
+		if v, _ := records[0].Get("uuid"); v != "db806676-aaaa" {
+			t.Errorf("uuid = %#v, want string", v)
+		}
+		if v, _ := records[0].Get("n"); v != int64(7) {
+			t.Errorf("n = %#v, want int64(7)", v)
+		}
+	})
+
+	t.Run("with schema applies type, rename and drops unlisted columns", func(t *testing.T) {
+		schema := *orderedmap.New[string, InputPluginSqlConfigSchemaColumn]()
+		rename := "listing_id"
+		schema.Set("uuid", InputPluginSqlConfigSchemaColumn{Type: "string", Rename: &rename})
+		schema.Set("n", InputPluginSqlConfigSchemaColumn{Type: "int"})
+
+		records := extractAllRecords(t, newSqlSerializer(schema, true), columns, rows)
+		if len(records) != 1 {
+			t.Fatalf("got %d records, want 1", len(records))
+		}
+		if v, _ := records[0].Get("listing_id"); v != "db806676-aaaa" {
+			t.Errorf("listing_id = %#v, want string", v)
+		}
+		if v, _ := records[0].Get("n"); v != int64(7) {
+			t.Errorf("n = %#v, want int64(7)", v)
+		}
+		if _, ok := records[0].Get("uuid"); ok {
+			t.Errorf("uuid should have been renamed")
+		}
+		if _, ok := records[0].Get("id"); ok {
+			t.Errorf("id is not in schema and should not be emitted")
+		}
+	})
+}

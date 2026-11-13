@@ -254,6 +254,9 @@ in:
   - For MySQL, [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) is used.
   - For PostgreSQL, [lib/pq](https://github.com/lib/pq) is used.
 - table: Table name
+- query: Raw SQL query to extract from, instead of `table` (optional; use either `table` or `query`).
+  - If `schema` is specified, it is applied in the same way as table mode (type conversion, transforms, rename), and columns not listed in `schema` are not emitted.
+  - If `schema` is omitted, all columns are emitted as-is, except that `[]byte` values (what go-sql-driver/mysql returns for string columns) are converted to `string` so that they are not base64-encoded.
 - database_url: Database URL. This will be passed to `sql.Open` with the driver name.
   - For MySQL, it should be `user:password@tcp(host:port)/dbname` (See: [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#dsn-data-source-name))
 - pageSize: Number of records per page (optional, default: 1000)
